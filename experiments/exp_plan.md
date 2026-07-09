@@ -47,6 +47,5 @@ both the novelty and a protocol upgrade the small grid can afford.
 
 ## Compute budget
 Units ≈ datasets(3) × regimes(≤4) × models(8) × seeds(10) ≈ 960, each a cheap
-inference (TFM) or a small fit (classical, n small). A few GPU-hours; dev sharded
-across A100+A800, final on A800. TFMs + xgb/catboost on the A100 GPU; NGBoost (CPU-only) and the nested-CV
+inference (TFM) or a small fit (classical, n small). A few GPU-hours; dev used A100, final on A100. TFMs + xgb/catboost on the A100 GPU; NGBoost (CPU-only) and the nested-CV
 tuning run on the A100 box's CPU. Single box, no sharding. Augment regime applies to classical controls only (TFMs skip it).
