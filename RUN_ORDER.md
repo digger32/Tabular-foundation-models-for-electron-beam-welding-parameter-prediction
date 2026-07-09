@@ -67,7 +67,3 @@ python runner/stats.py --in runs/final --out runs/final
 python runner/review_gate.py runs/final --config runner/gate_config.yaml
 python runner/make_figures.py --in runs/final --out outputs/figures  # Fig 1-4 + Fig A1 (PDF+PNG)
 ```
-
-Note: HPO-honesty (gate D1) requires the tuned controls' optimism_gap to be recorded.
-Wire a nested-CV tuning step for {catboost,xgb,ngb,mlp} that writes optimism_gap into
-each unit's metrics before the final pass (see BUILD.md).
