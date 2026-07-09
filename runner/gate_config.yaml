@@ -1,0 +1,16 @@
+# Review-proofing gate config — A (EBW applied TFM benchmark).
+require_stats: true
+stats_artifacts:
+  - stats/omnibus.json
+  - stats/posthoc.json
+
+# D1: tuned classical controls whose optimism gap (inner-CV minus held-out) must be recorded.
+tuned_controls: ["catboost", "xgb", "ngb", "mlp"]
+
+# B1: the headline comparative claim must be replicated on >=1 PUBLIC welding dataset
+# (not the private EBW set). Fill with the confirmed public dataset tokens.
+comparative_claims:
+  - id: "tfm_matches_or_beats_tuned_classical_small_n"
+    independent_datasets: ["gmaw_e1", "gmaw_e2"]
+  - id: "tfm_beats_augmentation_pipeline"
+    independent_datasets: ["gmaw_e1", "gmaw_e2"]

@@ -1,0 +1,17 @@
+# A (EBW) environment. Pin exact versions at the Stage C currency check before the
+# final --no-resume pass (marked TODO-PIN below).
+numpy
+scipy
+pandas
+scikit-learn
+scikit-posthocs        # Nemenyi post-hoc
+xgboost
+catboost
+ngboost                # distributional classical control (calibration comparison)
+matplotlib
+pyyaml                 # datasets.yaml registry
+sdv                    # CTGAN/TVAE augmentation control arm (TODO-PIN: SingleTableMetadata API)
+
+# Tabular foundation models — load LOCAL checkpoints (no license-server calls):
+tabpfn                 # TODO-PIN: >=3 covers v3; v2/v2.5/v3 checkpoints staged by AR-02
+# autogluon.tabular    # OPTIONAL: only if wiring the Mitra regressor adapter

@@ -1,0 +1,39 @@
+# Dataset registry for the A (EBW) benchmark.
+# EBW is vendored and runs immediately. The two public welding sets below are the
+# external-validity leg (gate B1). Both are open access (CC BY); download the CSV on
+# the server, place it at `path`, and confirm the column names against the file header.
+
+ebw:
+  path: ebw_real_72.csv
+  inputs: [IW, IF, VW, FP]
+  targets: [Depth, Width]
+  source: "Vendored (also public on Kaggle); IJAMT reproducibility set (72 rows)."
+
+# ---- Public welding regression sets (external validity). ----
+
+gmaw_e1:
+  # GMAW dynamic dataset, experiment 1 (voltage ~20 V regime).
+  # Mendeley Data doi:10.17632/2nyjpb89bf.1 (CC BY 4.0); Data in Brief 35:106790 (2021).
+  # Inputs are settable process conditions + the within-run time coordinate (geometry
+  # evolves over process time under fixed settings, so `time` is needed for a well-posed
+  # regression). Excluded: num/index, cputime_dif (compute artefact), image (frame id),
+  # volume (Mv) & wire_l (Ul) -> arc-derived downstream = leak.
+  path: gmaw_e1.csv                 # save experiment-1 file here
+  inputs: [tension, velocity, weld_velocity, time]
+  targets: [width, depth, high]
+  group_by: [tension, velocity, weld_velocity]   # a run = one setting = one time series; keep whole runs together
+  source: "Mendeley Data doi:10.17632/2nyjpb89bf.1 (https://data.mendeley.com/datasets/2nyjpb89bf/1), CC BY 4.0."
+  status: "TO FETCH"
+
+gmaw_e2:
+  # Same campaign, experiment 2 (voltage ~24.5 V regime). Independent leg.
+  path: gmaw_e2.csv                 # save experiment-2 file here
+  inputs: [tension, velocity, weld_velocity, time]
+  targets: [width, depth, high]
+  group_by: [tension, velocity, weld_velocity]   # a run = one setting = one time series; keep whole runs together
+  source: "Mendeley Data doi:10.17632/2nyjpb89bf.1, CC BY 4.0 (experiment 2)."
+  status: "TO FETCH"
+
+# (An optional third public set was removed: the DOI previously listed here was
+#  wrong. External validity is covered by gmaw_e1 + gmaw_e2. Add a third set later
+#  only with a verified source.)

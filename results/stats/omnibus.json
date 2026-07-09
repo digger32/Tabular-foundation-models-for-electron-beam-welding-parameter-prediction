@@ -1,0 +1,15 @@
+{
+  "test": "Friedman across models on macro-RMSE (regime=full)",
+  "n_blocks": 30,
+  "models": [
+    "catboost",
+    "mlp",
+    "ngb",
+    "tabpfn_v2",
+    "tabpfn_v25",
+    "tabpfn_v3",
+    "xgb"
+  ],
+  "friedman_stat": 78.58571428571429,
+  "p_value": 6.998782825644281e-15
+}
