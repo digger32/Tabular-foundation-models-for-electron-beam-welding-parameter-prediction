@@ -19,7 +19,7 @@ behind a review-proofing gate.
 - `runner/make_figures.py` - figures from `stats/*.json`.
 - `data/datasets.yaml` - dataset registry; `data/ebw_real_72.csv` (vendored).
 - `fetch_data.py` - pull the external GMAW datasets on a networked machine.
-- `RUN_ORDER.md`, `BUILD.md`, `CODE_REVIEW.md`, `experiments/exp_plan.md`.
+- `RUN_ORDER.md`, `experiments/exp_plan.md`.
 
 ## Quickstart
 ```bash
