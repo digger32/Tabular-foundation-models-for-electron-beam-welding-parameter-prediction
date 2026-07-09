@@ -1,15 +1,16 @@
 # Tabular foundation models for electron-beam welding parameter prediction
 
-Reproducibility package for the study *Out-of-the-Box Without Training: Tabular
-Foundation Models for Electron-Beam Welding Parameter Prediction in the
-Small-Sample Regime* (target: *AI*, MDPI).
+Reproducibility package for the study *Out-of-the-Box, Calibrated, and Conformal:
+Tabular Foundation Models for Electron-Beam Welding Parameter Prediction*
+(target: *AI*, MDPI).
 
 Benchmarks TabPFN v2 / v2.5 / v3 (in-context, no training) against nested-CV-tuned
 CatBoost, XGBoost, NGBoost and an MLP, plus a CTGAN/TVAE augmentation arm, on a
 72-row electron-beam welding dataset and two public gas-metal-arc-welding datasets
-(group-split, leakage-controlled). Reports per-target RMSE/MAE/R2, interval
-calibration, a few-shot curve, and Friedman/Nemenyi + Wilcoxon-Holm statistics,
-behind a review-proofing gate.
+(group-split, leakage-controlled). Reports per-target RMSE/MAE/R2, interval calibration (coverage, ECE, CRPS, reliability),
+split-conformal recalibration, a few-shot curve, wall-clock cost, and Friedman/Nemenyi +
+Wilcoxon-Holm statistics with an optimism gap for every tuned control, behind a
+review-proofing gate.
 
 ## Layout
 - `runner/bench_runner.py` - job-based runner (unit = dataset x regime x model x seed;

@@ -42,7 +42,7 @@ tmux new -s ebwsmoke -d "python runner/bench_runner.py --datasets ebw \
   --seeds 0,1,2 --outdir runs/smoke --timeout-s 1800 ; echo DONE"
 ```
 
-## 5. Dev run (single A100 — no sharding)
+## 5. Dev run (single GPU box, no sharding)
 ```bash
 tmux new -s ebwdev -d "python runner/bench_runner.py \
   --datasets ebw,gmaw_e1,gmaw_e2 \
@@ -65,5 +65,9 @@ tmux new -s ebwfinal -d "python runner/bench_runner.py \
 ```bash
 python runner/stats.py --in runs/final --out runs/final
 python runner/review_gate.py runs/final --config runner/gate_config.yaml
-python runner/make_figures.py --in runs/final --out outputs/figures  # Fig 1-4 + Fig A1 (PDF+PNG)
+# the gate must print GATE PASSED; it asserts A1 clean run (no resume, no skipped units
+# beyond the by-design ones), B1 external validity, C1 calibration recorded,
+# D1 optimism gap present for every tuned control, and E1 statistics outputs.
+python runner/make_figures.py --in runs/final --out outputs/figures  # 13 figures (PDF+PNG)
 ```
+

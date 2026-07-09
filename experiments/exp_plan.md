@@ -7,10 +7,10 @@ display item. Reproducibility legs baked in (the reviewer concern).
 
 | ID | Claim it supports | Figure/Table | Datasets / units | Baselines | Metrics | Stat test | RP items |
 |----|-------------------|--------------|------------------|-----------|---------|-----------|----------|
-| E1 | C1 TFMs match/beat the best tuned classical on small-n EBW | Fig 1, Table 1 | ebw × full × {tabpfn v2/v25/v3, mitra} vs tuned {catboost,xgb,ngb,mlp} × 10 seeds | tuned classical | RMSE/MAE/R² per output (depth,width) | Friedman+Nemenyi across models; Wilcoxon-Holm pairwise | 1,2,3,6,9,11 |
+| E1 | C1 TFMs match/beat the best tuned classical on small-n EBW | Fig 1, Table 1 | ebw × full × {tabpfn v2/v25/v3} vs tuned {catboost,xgb,ngb,mlp} × 10 seeds | tuned classical | RMSE/MAE/R² per output (depth,width) | Friedman+Nemenyi across models; Wilcoxon-Holm pairwise | 1,2,3,6,9,11 |
 | E2 | C2 Few-shot curve: TFMs hold as context shrinks | Fig 2 | ebw × {full,fewshot50,fewshot25} × TFMs + best control × 10 | best tuned control | RMSE vs context size | trend + CI | 1,4,5 |
 | E3 | C3 TFMs (no augmentation) vs the augmentation pipeline | Fig 3 | ebw × {full, augment} × {TFMs; classical+CTGAN/TVAE} × 10 | classical+augment | RMSE/MAE + calibration | Wilcoxon-Holm | 1,2,6,11 |
-| E4 | C4 TFMs are calibrated for manufacturing use | Fig 4 | ebw × full × distributional {tabpfn*, mitra, ngb} × 10 | ngb | 80% PI coverage, interval-ECE, CRPS | coverage vs nominal | 4 |
+| E4 | C4 TFMs are calibrated for manufacturing use | Fig 4 | ebw × full × distributional {tabpfn*, ngb} × 10 | ngb | 80% PI coverage, interval-ECE, CRPS | coverage vs nominal | 4 |
 | E5 | external validity | Fig A1 | {laser_bead, gmaw_bead} × full × TFMs vs tuned classical × 10 | tuned classical | RMSE/MAE/R² | replication | 2 |
 | E-final | clean final pass | (all) | full matrix, from scratch, resume DISABLED, one box | — | — | — | 1 |
 
@@ -46,6 +46,14 @@ remove temporal-neighbour leakage. This is
 both the novelty and a protocol upgrade the small grid can afford.
 
 ## Compute budget
-Units ≈ datasets(3) × regimes(≤4) × models(8) × seeds(10) ≈ 960, each a cheap
-inference (TFM) or a small fit (classical, n small). A few GPU-hours; dev used A100, final on A100. TFMs + xgb/catboost on the A100 GPU; NGBoost (CPU-only) and the nested-CV
-tuning run on the A100 box's CPU. Single box, no sharding. Augment regime applies to classical controls only (TFMs skip it).
+Units = datasets(3) x regimes(4) x models(7) x seeds(10) = 840, each a cheap in-context
+inference (TFM) or a small fit plus nested-CV tuning (classical, n small). The frozen final
+pass completed all 840 units in a few GPU-hours on a single box. TabPFN v2/v2.5/v3 and the
+XGBoost/CatBoost controls run on the GPU; NGBoost (CPU-only), the MLP, and the nested-CV
+tuning of every classical control run on that box's CPU. Single box, no sharding.
+
+The augment regime is defined for the classical controls only, so its TFM cells are recorded
+as skips by design: a foundation model is not trained on the rows it receives, and enlarging
+its context with synthetic rows would test context construction rather than augmentation.
+NGBoost additionally fails to fit on the reduced EBW contexts (nine seeds at 25%, one at 50%),
+which the runner records as `did-not-fit` skips rather than failures.
