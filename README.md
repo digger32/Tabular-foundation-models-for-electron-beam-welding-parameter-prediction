@@ -67,7 +67,7 @@ its unit-level log; `figures/` holds the figures as published.
 ## Citing
 If you use this code or the EBW dataset, please cite the manuscript (AI, MDPI) and this archive:
 
-> Kurashkin, S.O.; Tynchenko, V.S.; Borodulin, A.S.; Nelyub, V.A.; Kalutsky, N.O.; Tee, C.
+> Kurashkin, S.O.; Tynchenko, V.S.; Borodulin, A.S.; Nelyub, V.A.; Kalutsky, N.O.; Connie, T.
 > Tabular Foundation Models for Electron-Beam Welding Parameter Prediction: Code, Data and
 > Frozen Results. Zenodo, 2026. doi:10.5281/zenodo.21277220
 
