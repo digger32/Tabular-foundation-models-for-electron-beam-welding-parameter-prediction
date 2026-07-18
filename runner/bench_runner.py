@@ -2,14 +2,28 @@
 """
 A (EBW) job-based runner — TFM few-shot benchmark for welding parameter prediction.
 
-Unit = dataset x regime x model x seed, each in its OWN subprocess (a hang / OOM in
-one unit never takes down the batch). Orchestration is the house base: resume
+Unit = dataset x regime x model x seed x fold, each in its OWN subprocess (a hang /
+OOM in one unit never takes down the batch). Orchestration is the house base: resume
 (skip units whose output exists), per-unit hard timeout, one manifest record per
 unit, keep going past failures. Only run_unit() and the axis defaults are adapted.
 
+Splitting is declared per dataset in datasets.yaml, never assumed here:
+  cv: logo      leave-one-group-out, one fold per group (EBW: 15 settings)
+  cv: holdout   one seeded held-out split, grouped when `group_by` is set (GMAW)
+Whatever the mode, `group_by` rows never straddle the split. Every unit records
+`leak_check`, the number of test input vectors that also occur in its own training
+set; the review gate fails the run if that is ever non-zero. This assert exists
+because the EBW set was long believed to be 72 independent experiments when it is
+in fact 18 coupons x 4 cross-sections over 15 distinct settings, and a random split
+was therefore scoring replicate recall rather than prediction at a new setting.
+
 Task: MULTI-OUTPUT regression (weld depth + width). Records per-instance predictions
-(mean + quantiles where the model is distributional) plus per-output metrics and,
-for distributional models, calibration (CRPS, interval coverage). TFM regressors
+(mean AND the quantile grid where the model is distributional) plus per-output
+metrics and, for distributional models, calibration (CRPS, interval coverage). The
+quantile grid is persisted so that conformal intervals, reliability curves and the
+acceptance-decision layer can be rebuilt post hoc WITHOUT a re-run. (Before payload
+v2 the grid was computed, consumed inside metrics() and thrown away, which forced a
+full re-run for any new interval question.) TFM regressors
 (TabPFN v2/v2.5/v3, Mitra) predict in-context from LOCAL checkpoints — no training,
 no augmentation. TabICL is classification-only (AR-02 cap) and is skipped here.
 
@@ -98,32 +112,68 @@ def load_full(dataset: str):
                   "name": dataset, "groups": groups}
 
 
-def make_split(X, Y, seed, groups=None, test_frac=0.2):
-    """Seeded held-out split, paired across models. If `groups` is given (dynamic
-    sets), split by GROUP so all rows of a run go entirely to train or test (no
-    temporal-neighbour leakage); otherwise a plain random split (EBW: 72 independent
-    experiments, nothing to group). Standardise X on TRAIN only. Returns the train
-    group ids too, so nested-CV tuning can also respect groups."""
+def n_folds(dataset: str) -> int:
+    """How many folds this dataset's declared `cv` mode implies. logo -> one fold per
+    group; holdout -> a single seeded split. Called by the orchestrator to build the
+    unit list, so the fold axis is data-driven and never hard-coded."""
     import numpy as np
+    spec = _dataset_registry()[dataset]
+    if spec.get("cv", "holdout") != "logo":
+        return 1
+    _, _, meta = load_full(dataset)
+    if meta.get("groups") is None:
+        raise ValueError(f"dataset '{dataset}' declares cv: logo but no group_by")
+    return int(np.unique(meta["groups"]).size)
+
+
+def make_folds(X, Y, seed, groups=None, cv="holdout", test_frac=0.2):
+    """Return the list of (train_idx, test_idx) index pairs for this dataset.
+
+    cv='logo'     leave-one-group-out: fold g holds out every row of group g, trains
+                  on all other groups. Deterministic — `seed` does not enter the
+                  split, only model stochasticity. Used for EBW, where 15 settings
+                  are too few to spend 3 of them on a single held-out fifth.
+    cv='holdout'  one seeded 80/20 split, grouped when `groups` is given (whole runs
+                  stay together), plain random only when the dataset explicitly
+                  declares no grouping.
+
+    NOTE: no dataset is assumed ungrouped. `group_by: null` must be written in the
+    registry on purpose; an absent key on a dataset with replicate structure is the
+    exact mistake that produced the original EBW split.
+    """
+    import numpy as np
+    if cv == "logo":
+        if groups is None:
+            raise ValueError("cv='logo' requires group_by")
+        return [(np.flatnonzero(groups != g), np.flatnonzero(groups == g))
+                for g in np.unique(groups)]
     if groups is not None:
         from sklearn.model_selection import GroupShuffleSplit
         gss = GroupShuffleSplit(n_splits=1, test_size=test_frac, random_state=seed)
-        tr, te = next(gss.split(X, Y, groups))
-    else:
-        rng = np.random.default_rng(seed)
-        idx = rng.permutation(len(X)); cut = max(1, int(round((1 - test_frac) * len(X))))
-        tr, te = idx[:cut], idx[cut:]
+        return [next(gss.split(X, Y, groups))]
+    rng = np.random.default_rng(seed)
+    idx = rng.permutation(len(X)); cut = max(1, int(round((1 - test_frac) * len(X))))
+    return [(idx[:cut], idx[cut:])]
+
+
+def load_dataset(dataset: str, seed: int, fold: int = 0):
+    """Return one (X_tr, Y_tr, X_te, Y_te, meta, groups_tr) fold. X is standardised on
+    TRAIN only. meta carries `leak_check`: how many test input vectors also occur in
+    this fold's training set — must be 0, asserted by review_gate F1."""
+    import numpy as np
+    X, Y, meta = load_full(dataset)
+    spec = _dataset_registry()[dataset]
+    folds = make_folds(X, Y, seed, groups=meta.get("groups"), cv=spec.get("cv", "holdout"))
+    if fold >= len(folds):
+        raise IndexError(f"{dataset}: fold {fold} of {len(folds)}")
+    tr, te = folds[fold]
+    groups = meta.get("groups")
     mu, sd = X[tr].mean(0), X[tr].std(0) + 1e-9
     Xs = (X - mu) / sd
-    groups_tr = groups[tr] if groups is not None else None
-    return Xs[tr], Y[tr], Xs[te], Y[te], groups_tr
-
-
-def load_dataset(dataset: str, seed: int):
-    """Return one seeded split (X_tr, Y_tr, X_te, Y_te, meta, groups_tr)."""
-    X, Y, meta = load_full(dataset)
-    X_tr, Y_tr, X_te, Y_te, groups_tr = make_split(X, Y, seed, groups=meta.get("groups"))
-    return X_tr, Y_tr, X_te, Y_te, meta, groups_tr
+    seen = {tuple(r) for r in X[tr]}
+    meta["leak_check"] = int(sum(tuple(r) in seen for r in X[te]))
+    meta["n_train"], meta["n_test"], meta["fold"] = len(tr), len(te), fold
+    return Xs[tr], Y[tr], Xs[te], Y[te], meta, (groups[tr] if groups is not None else None)
 
 
 def augment_training(X_tr, Y_tr, seed, method=None, n_synth=2000):
@@ -152,23 +202,50 @@ def augment_training(X_tr, Y_tr, seed, method=None, n_synth=2000):
 
 
 def subsample_context(X_tr, Y_tr, groups_tr, frac, seed):
-    """Few-shot: shrink the context. Carries group ids along so grouped tuning stays
-    consistent after subsampling."""
+    """Few-shot: shrink the context. On a GROUPED dataset drop whole groups, not rows:
+    the practitioner question is 'how few welding SETTINGS must I run', and keeping 2
+    of the 4 cross-sections of a coupon does not answer it (nor does it shrink the
+    input coverage at all). On an ungrouped dataset fall back to a row subsample.
+    Carries group ids along so grouped tuning stays consistent afterwards."""
     import numpy as np
     rng = np.random.default_rng(seed)
-    k = max(8, int(round(frac * len(X_tr))))
-    idx = rng.choice(len(X_tr), size=k, replace=False)
+    if groups_tr is not None:
+        uniq = np.unique(groups_tr)
+        k = max(2, int(round(frac * len(uniq))))
+        keep = set(rng.choice(uniq, size=min(k, len(uniq)), replace=False).tolist())
+        idx = np.flatnonzero(np.isin(groups_tr, list(keep)))
+    else:
+        k = max(8, int(round(frac * len(X_tr))))
+        idx = rng.choice(len(X_tr), size=k, replace=False)
     g = groups_tr[idx] if groups_tr is not None else None
     return X_tr[idx], Y_tr[idx], g
 
 
-QLEVELS = [0.05,0.1,0.25,0.5,0.75,0.9,0.95]   # stored per unit for CRPS/reliability
+PAYLOAD_VERSION = 2      # v1 persisted pred_mean + y_test only; v2 adds pred_q + leak_check
+QLEVELS = [0.05,0.1,0.25,0.5,0.75,0.9,0.95]   # persisted per unit as `pred_q` (payload v2)
 TFM_DEVICE = os.environ.get("EBW_DEVICE", "cuda")
-# Everything that CAN use the GPU does, because the CPU is busy with AR-02 and the
-# GPU is idle. Tree controls (xgb/catboost) -> GPU. NGBoost has no GPU build, so it
-# stays on CPU with a single thread (n_jobs=1) to avoid contending with AR-02.
-# Force trees onto CPU with EBW_TREE_CPU=1 if ever needed.
+# Device policy, MEASURED per model on a micro slice rather than assumed. On this
+# grid (n_train 64-68 for EBW) the two families want opposite hardware:
+#   TFMs        GPU by a wide margin      v3: 13.4 s GPU vs 300.1 s CPU  (22x)
+#   tree ctrls  CPU by a wide margin      catboost: 237.4 s GPU vs 9.7 s CPU (24x)
+# A CatBoost fit on 64 rows is microseconds of arithmetic; on GPU it is device init,
+# host<->device copies and per-iteration sync, three orders of magnitude above the
+# useful work. The hybrid — EBW_DEVICE=cuda with EBW_TREE_CPU=1 — is therefore the
+# right default, and it is ONE configuration (the manifest records device+tree_cpu
+# per unit and gate A1 asserts a single value across the run).
 _TREE_GPU = TFM_DEVICE.startswith("cuda") and not os.environ.get("EBW_TREE_CPU")
+
+# THREAD PINNING for the tree controls. On tiny data an unpinned tree library is
+# pathological, not merely suboptimal: XGBoost defaults its thread count to every
+# core on the node, so a 64-row fit spends tens of milliseconds per boosting round
+# spawning and synchronising threads over microseconds of arithmetic. Measured on
+# the A800 node: xgb 38.8 s (GPU) -> 1593.5 s (CPU, unpinned) per EBW unit, with the
+# augment units hitting the 1800 s timeout. The bigger the node, the worse it gets.
+# CatBoost survived only because it throttles its own threads on small inputs; it is
+# pinned here too so both controls are timed on equal terms.
+# Parallelism belongs at the UNIT level (independent jobs), never inside a fit on 64
+# rows. Raise with EBW_TREE_THREADS only after a micro slice says it helps.
+_TREE_THREADS = int(os.environ.get("EBW_TREE_THREADS", "1"))
 if _TREE_GPU:
     import warnings
     # xgb GPU-trained booster predicting on a tiny host array logs a device-mismatch
@@ -197,20 +274,37 @@ def get_model(model: str, meta: dict, seed: int):
     if model == "catboost":
         from catboost import CatBoostRegressor
         from sklearn.multioutput import MultiOutputRegressor
+        # CatBoost's GPU and CPU trainers are DIFFERENT ESTIMATORS, per the vendor FAQ,
+        # not one estimator on two devices:
+        #   border_count   254 (CPU) vs 128 (GPU)  — half the quantisation resolution
+        #   model_size_reg on by default on CPU, off on GPU
+        #   bootstrap_type MVS/subsample 0.8 (CPU) vs Bayesian (GPU)
+        # and, decisively for us, GPU training is documented as NON-DETERMINISTIC: the
+        # order of floating-point summation is not fixed, so `random_state` does NOT
+        # reproduce a GPU run. Our seed axis therefore never controlled CatBoost's
+        # stochasticity while task_type="GPU" was in force — the 10 seeds were measuring
+        # device noise on top of split noise, with no way to separate them.
+        # The hybrid default (trees on CPU) removes this: CPU training is deterministic
+        # under random_state, so the seed axis means what the paper says it means.
         base = CatBoostRegressor(random_state=seed, verbose=False,
-                                 task_type="GPU" if _TREE_GPU else "CPU")
+                                 task_type="GPU" if _TREE_GPU else "CPU",
+                                 thread_count=_TREE_THREADS)
         return ("sk", MultiOutputRegressor(base))
     if model == "xgb":
         from xgboost import XGBRegressor
         from sklearn.multioutput import MultiOutputRegressor
         base = XGBRegressor(tree_method="hist", device="cuda" if _TREE_GPU else "cpu",
-                            random_state=seed)
+                            random_state=seed, n_jobs=_TREE_THREADS)
         return ("sk", MultiOutputRegressor(base))
     if model == "ngb":
         from ngboost import NGBRegressor
         from sklearn.multioutput import MultiOutputRegressor
-        # NGBoost is CPU-only (no GPU build). Kept as the distributional calibration
-        # control; cheap on this n. It runs on the A100 box's CPU, not the GPU.
+        # NGBoost is CPU-only (no GPU build) and its base learner is a single-threaded
+        # decision tree, so it is unaffected by the device flags and by thread pinning:
+        # measured 51.1 s vs 57.4 s across the two slices. That cost is real work, not
+        # overhead, which makes NGBoost the tail of the hybrid grid. It stays as the
+        # distributional calibration control — it is the baseline whose 0.297 coverage
+        # the paper is about, so it cannot be dropped for being slow.
         return ("ngb", MultiOutputRegressor(NGBRegressor(random_state=seed, verbose=False)))
     if model == "mlp":
         from sklearn.neural_network import MLPRegressor
@@ -348,16 +442,16 @@ def _macro_rmse(mean, Y_te):
                           for j in range(Y_te.shape[1])]))
 
 
-def run_unit(dataset: str, regime: str, model: str, seed: int, out_path: Path) -> dict:
+def run_unit(dataset: str, regime: str, model: str, seed: int, fold: int, out_path: Path) -> dict:
     import numpy as np
-    X_tr, Y_tr, X_te, Y_te, meta, groups_tr = load_dataset(dataset, seed)
+    X_tr, Y_tr, X_te, Y_te, meta, groups_tr = load_dataset(dataset, seed, fold)
     if regime == "augment" and model not in CLASSICAL:
-        _write_skip(out_path, dataset, regime, model, seed, "augment is classical-only")
+        _write_skip(out_path, dataset, regime, model, seed, fold, "augment is classical-only")
         return {"skipped": True}
     try:
         kind, obj = get_model(model, meta, seed)
     except _Skip as e:
-        _write_skip(out_path, dataset, regime, model, seed, str(e)); return {"skipped": True}
+        _write_skip(out_path, dataset, regime, model, seed, fold, str(e)); return {"skipped": True}
 
     if regime.startswith("fewshot"):
         frac = {"fewshot50": 0.5, "fewshot25": 0.25}[regime]
@@ -380,14 +474,22 @@ def run_unit(dataset: str, regime: str, model: str, seed: int, out_path: Path) -
         # graceful skip, NOT a failure: the manifest stays clean and the did-not-fit
         # fact is recorded as data for the "TFMs fit where classical baselines do not"
         # finding. (TFM inference does not hit this in practice.)
-        _write_skip(out_path, dataset, regime, model, seed,
+        _write_skip(out_path, dataset, regime, model, seed, fold,
                     f"did-not-fit@n{len(X_tr)}:{type(e).__name__}")
         return {"skipped": True}
 
     result = {
-        "dataset": dataset, "regime": regime, "model": model, "seed": seed,
+        "payload_version": PAYLOAD_VERSION,
+        "dataset": dataset, "regime": regime, "model": model, "seed": seed, "fold": fold,
         "task": "regression", "targets": meta["targets"],
+        "n_train": meta["n_train"], "n_test": meta["n_test"],
+        "leak_check": meta["leak_check"],   # test inputs also present in train; gate F1 wants 0
         "pred_mean": np.asarray(mean).tolist(),
+        # The quantile grid, persisted (payload v2). Shape (n_test, n_targets, |QLEVELS|),
+        # None for point-only models. Rounded to 6 dp: the measurement resolution is
+        # 0.01 mm, so this is lossless for every downstream use and keeps the unit small.
+        "q_levels": list(QLEVELS),
+        "pred_q": (np.round(np.asarray(Q), 6).tolist() if Q is not None else None),
         "y_test": Y_te.tolist(),
         "metrics": metrics(np.asarray(mean), Q, Y_te, meta, optimism_gap=optimism),
     }
@@ -395,16 +497,17 @@ def run_unit(dataset: str, regime: str, model: str, seed: int, out_path: Path) -
     return result
 
 
-def _write_skip(out_path, dataset, regime, model, seed, why):
-    out_path.write_text(json.dumps({"dataset": dataset, "regime": regime, "model": model,
-                                    "seed": seed, "skipped": why}))
+def _write_skip(out_path, dataset, regime, model, seed, fold, why):
+    out_path.write_text(json.dumps({"payload_version": PAYLOAD_VERSION, "dataset": dataset,
+                                    "regime": regime, "model": model, "seed": seed,
+                                    "fold": fold, "skipped": why}))
 
 
 # --------------------------------------------------------------------------- #
 # Orchestration — house base (axis 'protocol' carries the regime token).       #
 # --------------------------------------------------------------------------- #
-def unit_id(d, r, m, s): return f"{d}__{r}__{m}__seed{s}"
-def unit_out_path(o, d, r, m, s): return o / f"{unit_id(d, r, m, s)}.json"
+def unit_id(d, r, m, s, f): return f"{d}__{r}__{m}__seed{s}__fold{f}"
+def unit_out_path(o, d, r, m, s, f): return o / f"{unit_id(d, r, m, s, f)}.json"
 
 
 def append_manifest(outdir, record):
@@ -414,12 +517,15 @@ def append_manifest(outdir, record):
 
 def run_worker(a):
     outdir = Path(a.outdir)
-    run_unit(a.dataset, a.protocol, a.model, a.seed,
-             unit_out_path(outdir, a.dataset, a.protocol, a.model, a.seed))
+    run_unit(a.dataset, a.protocol, a.model, a.seed, a.fold,
+             unit_out_path(outdir, a.dataset, a.protocol, a.model, a.seed, a.fold))
 
 
 def run_orchestrator(a):
     outdir = Path(a.outdir); outdir.mkdir(parents=True, exist_ok=True)
+    if a.no_resume and a.folds != "all":
+        sys.exit("[runner] refuse: --no-resume final pass must cover every fold "
+                 "(drop --folds). A sliced final pass passes gate A1 while missing units.")
     datasets = a.datasets.split(","); regimes = a.protocols.split(",")
     models = a.models.split(","); seeds = [int(s) for s in a.seeds.split(",")]
     run_started = datetime.now(timezone.utc).isoformat()
@@ -428,7 +534,19 @@ def run_orchestrator(a):
         "axes": {"datasets": datasets, "regimes": regimes, "models": models, "seeds": seeds},
         "timeout_s": a.timeout_s}, indent=2))
 
-    units = [(d, r, m, s) for d in datasets for r in regimes for m in models for s in seeds]
+    # The fold axis is read from each dataset's declared `cv` mode, not passed in:
+    # EBW (cv: logo) expands to 15 folds, the GMAW sets (cv: holdout) to 1.
+    # --folds pins a subset (timing slices want ONE fold, not the whole axis).
+    folds = {d: n_folds(d) for d in datasets}
+    print(f"[runner] folds per dataset: {folds}", flush=True)
+    if a.folds != "all":
+        want = [int(x) for x in a.folds.split(",")]
+        fold_ids = {d: [f for f in want if f < folds[d]] for d in datasets}
+        print(f"[runner] --folds {a.folds} -> {fold_ids}", flush=True)
+    else:
+        fold_ids = {d: list(range(folds[d])) for d in datasets}
+    units = [(d, r, m, s, f) for d in datasets for r in regimes for m in models
+             for s in seeds for f in fold_ids[d]]
     shard_k, shard_n = (int(x) for x in a.shard.split("/"))
     if shard_n > 1:
         if a.no_resume:
@@ -439,16 +557,16 @@ def run_orchestrator(a):
           f"| timeout={a.timeout_s}s", flush=True)
 
     nd = ns = nf = nt = 0
-    for d, r, m, s in units:
-        out_path = unit_out_path(outdir, d, r, m, s); uid = unit_id(d, r, m, s)
+    for d, r, m, s, fo in units:
+        out_path = unit_out_path(outdir, d, r, m, s, fo); uid = unit_id(d, r, m, s, fo)
         if out_path.exists() and not a.no_resume:
             ns += 1; print(f"[skip] {uid}", flush=True); continue
         if out_path.exists() and a.no_resume:
             out_path.unlink()
         cmd = [sys.executable, os.path.abspath(__file__), "--worker",
                "--dataset", d, "--protocol", r, "--model", m, "--seed", str(s),
-               "--outdir", str(outdir)]
-        t0 = time.time(); status = "ok"
+               "--fold", str(fo), "--outdir", str(outdir)]
+        t0 = time.time(); u_started = datetime.now(timezone.utc).isoformat(); status = "ok"
         try:
             subprocess.run(cmd, timeout=a.timeout_s, check=True)
         except subprocess.TimeoutExpired:
@@ -457,10 +575,17 @@ def run_orchestrator(a):
             status = f"fail(rc={e.returncode})"; nf += 1; print(f"[FAIL] {uid} rc={e.returncode}", flush=True)
         else:
             nd += 1; print(f"[ok] {uid} ({time.time()-t0:.1f}s)", flush=True)
+        # `started` is THIS unit's start, not the orchestrator's: with a run-level
+        # stamp, finished-started is cumulative and wall_s cannot be checked against
+        # anything. `run_started` is kept separately for the A1 clean-run assert.
         append_manifest(outdir, {"unit": uid, "dataset": d, "regime": r, "model": m, "seed": s,
-                                 "status": status, "started": run_started,
+                                 "fold": fo, "status": status,
+                                 "started": u_started, "run_started": run_started,
                                  "finished": datetime.now(timezone.utc).isoformat(),
-                                 "wall_s": round(time.time()-t0, 1), "no_resume": a.no_resume})
+                                 "wall_s": round(time.time()-t0, 1),
+                                 "device": os.environ.get("EBW_DEVICE", "cuda"),
+                                 "tree_cpu": bool(os.environ.get("EBW_TREE_CPU")),
+                                 "no_resume": a.no_resume})
     print(f"[runner] done | ok={nd} skip={ns} fail={nf} timeout={nt}", flush=True)
 
 
@@ -472,12 +597,17 @@ def build_argparser():
     ap.add_argument("--models", default="tabpfn_v2,tabpfn_v25,tabpfn_v3,catboost,xgb,ngb,mlp",
                     help="mitra is optional: add it only after wiring its adapter (BUILD.md)")
     ap.add_argument("--seeds", default="0,1,2,3,4,5,6,7,8,9")
+    ap.add_argument("--folds", default="all",
+                    help="'all' (default) or a comma list, e.g. --folds 0 for a timing "
+                         "slice. The final pass must run 'all'; the runner refuses "
+                         "--no-resume with a fold subset.")
     ap.add_argument("--outdir", default="runs/dev")
     ap.add_argument("--timeout-s", dest="timeout_s", type=int, default=1800)
     ap.add_argument("--shard", default="0/1")
     ap.add_argument("--no-resume", dest="no_resume", action="store_true")
     ap.add_argument("--dataset"); ap.add_argument("--protocol")
     ap.add_argument("--model"); ap.add_argument("--seed", type=int)
+    ap.add_argument("--fold", type=int, default=0)
     return ap
 
 

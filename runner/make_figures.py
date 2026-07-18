@@ -114,6 +114,15 @@ def fig2(fewshot, out):
             ax.plot(xs, ys, "-o", color=COLOR.get(m, "#777"), label=m)
     ax.set_xlabel("context fraction"); ax.set_ylabel("macro-RMSE")
     ax.set_title("Few-shot: performance as the context shrinks")
+    # If one model diverges (e.g. MLP runaway fits), a linear axis squashes every
+    # informative curve to the floor; switch to log so all curves stay readable.
+    ymax = max((v["mean"] for regs in (fewshot or {}).values()
+                for r, v in regs.items() if r in order), default=1.0)
+    ymin = min((v["mean"] for regs in (fewshot or {}).values()
+                for r, v in regs.items() if r in order), default=1.0)
+    if ymin > 0 and ymax / ymin > 100:
+        ax.set_yscale("log")
+        ax.set_ylabel("macro-RMSE (log scale)")
     ax.invert_xaxis(); ax.legend(fontsize=8, ncol=2)
     save(fig, out, "fig2_fewshot_curve")
 
@@ -313,6 +322,43 @@ def fig_conformal(indir, out):
     save(fig,out,"fig_conformal")
 
 
+def fig_decision_oc(indir, out):
+    """Operating characteristic of the acceptance layer: (a) accept rate vs
+    tolerance-band scale (CV+, alpha=0.2); (b) rates at the representable risk levels."""
+    sweep = load_json(indir, "decision_sweep.json")
+    alphas = load_json(indir, "decision_alpha_sweep_production.json")
+    if not sweep or not alphas:
+        return
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(9.2, 3.6),
+                                 gridspec_kw={"width_ratios": [1.5, 1.0]})
+    models = ["tabpfn_v2", "tabpfn_v25", "tabpfn_v3", "ngb"]
+    for m in models:
+        xs = [s["scale"] for s in sweep["sweep"]]
+        acc = [s["models"][m]["accept_rate"] * 100 for s in sweep["sweep"]]
+        a1.plot(xs, acc, "-o", ms=3, color=COLOR.get(m, "#777"), label=m)
+    a1.axvline(1.0, color="#bbb", lw=1, ls="--")
+    a1.set_xlabel("tolerance-band scale (1.0 = production band)")
+    a1.set_ylabel("accept rate, % of cross-sections")
+    a1.set_title("(a) accept rate vs tolerance width (CV+, $\\alpha$=0.2)", fontsize=10)
+    a1.legend(fontsize=8)
+    pts = sorted(alphas["sweep_alpha"], key=lambda x: x["alpha"])
+    width = 0.18
+    xpos = np.arange(len(pts))
+    for i, m in enumerate(models):
+        dec = [p["models"][m]["decision_rate"] * 100 for p in pts]
+        fa = [p["models"][m]["false_accept_rate"] * 100 for p in pts]
+        b = a2.bar(xpos + (i - 1.5) * width, dec, width, color=COLOR.get(m, "#777"), label=m)
+        for rect, f in zip(b, fa):
+            if f > 0:
+                a2.text(rect.get_x() + rect.get_width() / 2, rect.get_height() + 1,
+                        "FA %.1f%%" % f, ha="center", fontsize=7, color="#900")
+    a2.set_xticks(xpos)
+    a2.set_xticklabels(["$\\alpha$=%s" % p["alpha"] for p in pts])
+    a2.set_ylabel("decision rate, %")
+    a2.set_title("(b) decisions vs stated risk", fontsize=10)
+    save(fig, out, "fig_decision_oc")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--in", dest="indir", required=True)
@@ -334,6 +380,7 @@ def main():
     fig_corr_heatmap(outdir)
     fig_inference_time(indir, outdir)
     fig_conformal(indir, outdir)
+    fig_decision_oc(indir, outdir)
     print(f"[figs] done -> {outdir}")
 
 

@@ -28,7 +28,9 @@ TFM = {"tabpfn_v2", "tabpfn_v25", "tabpfn_v3", "mitra"}
 CLASSICAL = {"catboost", "xgb", "ngb", "mlp"}
 
 
-def load_units(indir: Path):
+def load_raw_units(indir: Path):
+    """Every unit as written, fold axis intact. The tables want folds pooled; the
+    omnibus wants them apart (see make_blocks), so the two consumers load separately."""
     out = []
     for p in indir.glob("*__*__*__seed*.json"):
         try:
@@ -40,10 +42,165 @@ def load_units(indir: Path):
     return out
 
 
+def load_units(indir: Path):
+    return pool_folds(load_raw_units(indir))
+
+
+def pool_folds(units):
+    """Collapse the fold axis into ONE out-of-fold record per (dataset, regime, model,
+    seed), so everything downstream sees the same shape it always did.
+
+    Metrics are recomputed from the POOLED out-of-fold predictions rather than
+    averaged across folds. Under leave-one-regime-out a fold holds 4-12 rows, and a
+    per-fold R^2 is computed against the variance inside a single setting — i.e.
+    against measurement noise, which is meaningless and wildly unstable. Pooling all
+    72 out-of-fold predictions and scoring once is the standard, and the only honest,
+    OOF estimate. Datasets with cv: holdout have a single fold and are unaffected.
+
+    Calibration fields carried by the units are averaged over folds, weighted by test
+    size; the conformal decision layer does its own thing in decision.py.
+    """
+    from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+    groups = defaultdict(list)
+    for u in units:
+        groups[(u["dataset"], u["regime"], u["model"], u["seed"])].append(u)
+
+    pooled = []
+    for (d, r, m, s), us in groups.items():
+        if len(us) == 1 and us[0].get("fold", 0) == 0:
+            pooled.append(us[0]); continue
+        us = sorted(us, key=lambda x: x.get("fold", 0))
+        targets = us[0]["targets"]
+        Y = np.concatenate([np.asarray(u["y_test"]) for u in us])
+        P = np.concatenate([np.asarray(u["pred_mean"]) for u in us])
+        w = np.array([len(u["y_test"]) for u in us], float); w /= w.sum()
+        per_target = {}
+        for j, t in enumerate(targets):
+            per_target[t] = {
+                "rmse": float(mean_squared_error(Y[:, j], P[:, j]) ** 0.5),
+                "mae": float(mean_absolute_error(Y[:, j], P[:, j])),
+                "r2": float(r2_score(Y[:, j], P[:, j])),
+            }
+            crps = [(u["metrics"]["per_target"].get(t) or {}).get("crps") for u in us]
+            if all(c is not None for c in crps):
+                per_target[t]["crps"] = float(np.average(crps, weights=w))
+
+        def wavg(key):
+            v = [(u.get("metrics") or {}).get(key) for u in us]
+            return float(np.average(v, weights=w)) if all(x is not None for x in v) else None
+
+        pooled.append({
+            "payload_version": us[0].get("payload_version", 1),
+            "dataset": d, "regime": r, "model": m, "seed": s,
+            "fold": "pooled", "n_folds": len(us), "targets": targets,
+            "leak_check": int(sum(u.get("leak_check", 0) for u in us)),
+            "pred_mean": P.tolist(), "y_test": Y.tolist(),
+            "metrics": {"per_target": per_target,
+                        "coverage_80pi": wavg("coverage_80pi"),
+                        "ece": wavg("ece"),
+                        "coverage_80pi_raw_eval": wavg("coverage_80pi_raw_eval"),
+                        "coverage_80pi_conformal": wavg("coverage_80pi_conformal"),
+                        "optimism_gap": wavg("optimism_gap")},
+        })
+    return pooled
+
+
 def macro_rmse(u):
     pt = (u.get("metrics") or {}).get("per_target") or {}
     vals = [v["rmse"] for v in pt.values() if v.get("rmse") is not None]
     return float(np.mean(vals)) if vals else None
+
+
+def make_blocks(raw, models):
+    """Build the blocks for the Friedman omnibus. One block = one INDEPENDENT
+    replicate, and what counts as a replicate depends on how the dataset is split.
+
+    THE PROBLEM THIS SOLVES. Blocks used to be (dataset, seed): 3 datasets x 10 seeds
+    = 30. That was defensible while every dataset was re-split per seed — each seed
+    really was a fresh draw of the data. It stopped being true when EBW moved to
+    leave-one-regime-out, because a LOGO split is DETERMINISTIC: the seed no longer
+    touches the data at all, only the controls' internal stochasticity. Worse, it does
+    not touch the TFMs either — TabPFN defaults to random_state=0 and does no training,
+    so on EBW/full its ten "seeds" are bit-identical. Ten such blocks are not ten
+    replicates; they are one replicate reported ten times, and feeding them to Friedman
+    as independent inflates the effective N and therefore the significance.
+
+    THE RULE. Infer the replicate from the observable that defines it — the fold count:
+
+      n_folds > 1  (cv: logo)     the FOLD is the replicate: each fold holds out a
+                                  different welding setting, which is a genuinely
+                                  different test problem. Seeds are averaged inside the
+                                  fold, where they belong: they are model noise, not
+                                  data noise. EBW -> 15 blocks.
+      n_folds == 1 (cv: holdout)  the SEED is the replicate: each seed draws a
+                                  different GroupShuffleSplit, so seeds are the only
+                                  data-level variation there. GMAW -> 10 blocks each.
+
+    EBW 15 + gmaw_e1 10 + gmaw_e2 10 = 35 blocks, each an honest replicate — against 30
+    of which 10 were degenerate. The count barely moves; the meaning changes entirely.
+
+    Per-fold macro-RMSE is a sound block value even on a 4-row fold: RMSE is an absolute
+    error measure. Per-fold R^2 would NOT be (it would be scored against the variance
+    within one setting, i.e. against measurement noise) — which is why the tables pool
+    folds and only the omnibus splits them.
+
+    Returns (blocks, provenance) so omnibus.json can state what each block was.
+    """
+    per = defaultdict(dict)                    # (dataset, fold, seed) -> {model: rmse}
+    for u in raw:
+        if u.get("regime") != "full":
+            continue
+        r = macro_rmse(u)
+        if r is not None:
+            per[(u["dataset"], u.get("fold", 0), u["seed"])][u["model"]] = r
+
+    folds_of, seeds_of = defaultdict(set), defaultdict(set)
+    for (d, f, s) in per:
+        folds_of[d].add(f); seeds_of[d].add(s)
+
+    blocks, provenance = [], []
+    for d in sorted(folds_of):
+        if len(folds_of[d]) > 1:                               # LOGO: replicate = fold
+            for f in sorted(folds_of[d]):
+                acc = defaultdict(list)
+                for s in sorted(seeds_of[d]):
+                    for m, v in per.get((d, f, s), {}).items():
+                        acc[m].append(v)
+                if all(acc.get(m) for m in models):
+                    blocks.append({m: float(np.mean(acc[m])) for m in models})
+                    provenance.append({"dataset": d, "replicate": "fold", "fold": f,
+                                       "seeds_averaged": len(seeds_of[d])})
+        else:                                                  # holdout: replicate = seed
+            f = next(iter(folds_of[d]))
+            for s in sorted(seeds_of[d]):
+                c = per.get((d, f, s), {})
+                if all(m in c for m in models):
+                    blocks.append({m: c[m] for m in models})
+                    provenance.append({"dataset": d, "replicate": "seed", "seed": s})
+    return blocks, provenance
+
+
+def seed_determinism(raw, models):
+    """Report, don't hide: for each (dataset, regime, model), the spread across seeds
+    within a fixed fold. Zero is the expected and correct answer for a TFM on a LOGO
+    split at regime=full — TabPFN does no training and defaults to random_state=0, so
+    the same context returns the same prediction bit for bit. That is a reproducibility
+    property worth stating, not a defect worth hiding, and it is the direct contrast to
+    CatBoost, whose GPU training is documented as non-deterministic even under a fixed
+    random_state. Fed to the paper as a claim, and used here to justify averaging seeds
+    inside a LOGO block."""
+    per = defaultdict(list)
+    for u in raw:
+        r = macro_rmse(u)
+        if r is not None:
+            per[(u["dataset"], u["regime"], u["model"], u.get("fold", 0))].append(r)
+    out = defaultdict(list)
+    for (d, reg, m, f), vals in per.items():
+        if len(vals) > 1:
+            out[(d, reg, m)].append(float(np.std(vals)))
+    return {f"{d}|{reg}|{m}": {"mean_sd_across_seeds_within_fold": float(np.mean(v)),
+                               "max_sd": float(np.max(v)), "n_folds": len(v)}
+            for (d, reg, m), v in sorted(out.items())}
 
 
 def conformal_cqr(y, q_lo, q_hi, seed=0, alpha=0.20):
@@ -113,7 +270,8 @@ def main():
     indir, outdir = Path(a.indir), Path(a.outdir)
     (outdir / "stats").mkdir(parents=True, exist_ok=True)
 
-    units = load_units(indir)
+    raw = load_raw_units(indir)
+    units = pool_folds(raw)
     models = sorted({u["model"] for u in units})
     datasets = sorted({u["dataset"] for u in units})
     targets = sorted({t for u in units for t in u.get("targets", [])})
@@ -138,19 +296,16 @@ def main():
                                     "ci95": bootstrap_ci(vals)}
     (outdir / "stats" / "summary.json").write_text(json.dumps(summary, indent=2))
 
-    # ---- macro-RMSE table keyed by (dataset, seed, model), regime=full ---------
-    cell = defaultdict(dict)   # (dataset, seed) -> {model: macro_rmse}
-    for u in units:
-        if u.get("regime") != "full":
-            continue
-        r = macro_rmse(u)
-        if r is not None:
-            cell[(u["dataset"], u["seed"])][u["model"]] = r
+    # ---- blocks: the replicate is the fold under LOGO, the seed under holdout ---
+    blocks, block_provenance = make_blocks(raw, models)
+    (outdir / "stats" / "seed_determinism.json").write_text(
+        json.dumps(seed_determinism(raw, models), indent=2))
 
-    # ---- Friedman + Nemenyi across models over (dataset,seed) blocks -----------
-    blocks = [c for c in cell.values() if all(m in c for m in models)]
+    # ---- Friedman + Nemenyi across models -------------------------------------
     omnibus = {"test": "Friedman across models on macro-RMSE (regime=full)",
-               "n_blocks": len(blocks), "models": models}
+               "block_definition": "fold for cv=logo (seeds averaged within fold); "
+                                   "seed for cv=holdout (each seed is a fresh split)",
+               "n_blocks": len(blocks), "blocks": block_provenance, "models": models}
     posthoc = {"test": "Nemenyi post-hoc + mean ranks", "models": models}
     if len(blocks) >= 6 and len(models) >= 3:
         mat = np.array([[b[m] for m in models] for b in blocks])   # (blocks, models)

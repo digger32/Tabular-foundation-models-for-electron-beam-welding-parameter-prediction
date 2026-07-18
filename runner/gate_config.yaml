@@ -3,6 +3,12 @@ require_stats: true
 stats_artifacts:
   - stats/omnibus.json
   - stats/posthoc.json
+  - stats/decision_production.json         # acceptance layer, tier A (CV+)
+  - stats/decision_production_split.json   # split-conformal comparison arm
+  - stats/decision_sweep.json        # tolerance sweep -> tightest certifiable band
+
+# G1: the registry the gate reads to confirm every dataset declares its grouping.
+datasets_yaml: data/datasets.yaml
 
 # D1: tuned classical controls whose optimism gap (inner-CV minus held-out) must be recorded.
 tuned_controls: ["catboost", "xgb", "ngb", "mlp"]
