@@ -81,6 +81,6 @@ archive:
 > Kurashkin, S.O.; Tynchenko, V.S.; Borodulin, A.S.; Nelyub, V.A.; Kalutsky,
 > N.O.; Connie, T. Tabular Foundation Models for Electron-Beam Welding Parameter
 > Prediction: Code, Data and Frozen Results. Zenodo, 2026.
-> https://doi.org/10.5281/zenodo.21277220
+> https://doi.org/10.5281/zenodo.21432301
 
 Repository: https://github.com/digger32/Tabular-foundation-models-for-electron-beam-welding-parameter-prediction
