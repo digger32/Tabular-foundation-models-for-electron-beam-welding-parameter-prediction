@@ -1,0 +1,96 @@
+{
+  "tier": "ratio",
+  "conformal": "nexcp",
+  "sweep_alpha": [
+    {
+      "alpha": 0.4,
+      "models": {
+        "ngb": {
+          "n": 72,
+          "decision_rate": 1.0,
+          "accept_rate": 0.0,
+          "false_accept_rate": 0.0,
+          "false_accept_of_accepted": null,
+          "prevalence_in_band": 0.0
+        },
+        "tabiclv2": {
+          "n": 72,
+          "decision_rate": 1.0,
+          "accept_rate": 0.0,
+          "false_accept_rate": 0.0,
+          "false_accept_of_accepted": null,
+          "prevalence_in_band": 0.0
+        },
+        "tabpfn_v25": {
+          "n": 72,
+          "decision_rate": 1.0,
+          "accept_rate": 0.0,
+          "false_accept_rate": 0.0,
+          "false_accept_of_accepted": null,
+          "prevalence_in_band": 0.0
+        },
+        "tabpfn_v2": {
+          "n": 72,
+          "decision_rate": 1.0,
+          "accept_rate": 0.0,
+          "false_accept_rate": 0.0,
+          "false_accept_of_accepted": null,
+          "prevalence_in_band": 0.0
+        },
+        "tabpfn_v3": {
+          "n": 72,
+          "decision_rate": 1.0,
+          "accept_rate": 0.0,
+          "false_accept_rate": 0.0,
+          "false_accept_of_accepted": null,
+          "prevalence_in_band": 0.0
+        }
+      }
+    },
+    {
+      "alpha": 0.2,
+      "models": {
+        "ngb": {
+          "n": 72,
+          "decision_rate": 1.0,
+          "accept_rate": 0.0,
+          "false_accept_rate": 0.0,
+          "false_accept_of_accepted": null,
+          "prevalence_in_band": 0.0
+        },
+        "tabiclv2": {
+          "n": 72,
+          "decision_rate": 1.0,
+          "accept_rate": 0.0,
+          "false_accept_rate": 0.0,
+          "false_accept_of_accepted": null,
+          "prevalence_in_band": 0.0
+        },
+        "tabpfn_v25": {
+          "n": 72,
+          "decision_rate": 1.0,
+          "accept_rate": 0.0,
+          "false_accept_rate": 0.0,
+          "false_accept_of_accepted": null,
+          "prevalence_in_band": 0.0
+        },
+        "tabpfn_v2": {
+          "n": 72,
+          "decision_rate": 1.0,
+          "accept_rate": 0.0,
+          "false_accept_rate": 0.0,
+          "false_accept_of_accepted": null,
+          "prevalence_in_band": 0.0
+        },
+        "tabpfn_v3": {
+          "n": 72,
+          "decision_rate": 1.0,
+          "accept_rate": 0.0,
+          "false_accept_rate": 0.0,
+          "false_accept_of_accepted": null,
+          "prevalence_in_band": 0.0
+        }
+      }
+    }
+  ]
+}

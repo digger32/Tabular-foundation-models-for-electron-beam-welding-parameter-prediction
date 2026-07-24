@@ -1,0 +1,150 @@
+{
+  "tier": "ratio",
+  "alpha": 0.2,
+  "alpha_per_criterion": 0.1,
+  "criteria": [
+    "Depth",
+    "HB"
+  ],
+  "joint_correction": "bonferroni",
+  "conformal": "cvplus",
+  "cal_frac": null,
+  "models": {
+    "ngb": {
+      "Depth": {
+        "n": 72,
+        "decision_rate": 0.2222222222222222,
+        "abstain_rate": 0.7777777777777778,
+        "accept_rate": 0.2222222222222222,
+        "reject_rate": 0.0,
+        "false_accept_rate": 0.0,
+        "false_accept_of_accepted": 0.0,
+        "false_reject_rate": 0.0,
+        "false_reject_of_rejected": null,
+        "prevalence_in_band": 0.8194444444444444
+      },
+      "HB": {
+        "n": 72,
+        "decision_rate": 1.0,
+        "abstain_rate": 0.0,
+        "accept_rate": 0.0,
+        "reject_rate": 1.0,
+        "false_accept_rate": 0.0,
+        "false_accept_of_accepted": null,
+        "false_reject_rate": 0.0,
+        "false_reject_of_rejected": 0.0,
+        "prevalence_in_band": 0.0
+      },
+      "JOINT": {
+        "n": 72,
+        "decision_rate": 1.0,
+        "accept_rate": 0.0,
+        "false_accept_rate": 0.0,
+        "false_accept_of_accepted": null,
+        "prevalence_in_band": 0.0
+      }
+    },
+    "tabpfn_v25": {
+      "Depth": {
+        "n": 72,
+        "decision_rate": 0.4444444444444444,
+        "abstain_rate": 0.5555555555555556,
+        "accept_rate": 0.3888888888888889,
+        "reject_rate": 0.05555555555555555,
+        "false_accept_rate": 0.0,
+        "false_accept_of_accepted": 0.0,
+        "false_reject_rate": 0.0,
+        "false_reject_of_rejected": 0.0,
+        "prevalence_in_band": 0.8194444444444444
+      },
+      "HB": {
+        "n": 72,
+        "decision_rate": 1.0,
+        "abstain_rate": 0.0,
+        "accept_rate": 0.0,
+        "reject_rate": 1.0,
+        "false_accept_rate": 0.0,
+        "false_accept_of_accepted": null,
+        "false_reject_rate": 0.0,
+        "false_reject_of_rejected": 0.0,
+        "prevalence_in_band": 0.0
+      },
+      "JOINT": {
+        "n": 72,
+        "decision_rate": 1.0,
+        "accept_rate": 0.0,
+        "false_accept_rate": 0.0,
+        "false_accept_of_accepted": null,
+        "prevalence_in_band": 0.0
+      }
+    },
+    "tabpfn_v2": {
+      "Depth": {
+        "n": 72,
+        "decision_rate": 0.3888888888888889,
+        "abstain_rate": 0.6111111111111112,
+        "accept_rate": 0.3888888888888889,
+        "reject_rate": 0.0,
+        "false_accept_rate": 0.0,
+        "false_accept_of_accepted": 0.0,
+        "false_reject_rate": 0.0,
+        "false_reject_of_rejected": null,
+        "prevalence_in_band": 0.8194444444444444
+      },
+      "HB": {
+        "n": 72,
+        "decision_rate": 1.0,
+        "abstain_rate": 0.0,
+        "accept_rate": 0.0,
+        "reject_rate": 1.0,
+        "false_accept_rate": 0.0,
+        "false_accept_of_accepted": null,
+        "false_reject_rate": 0.0,
+        "false_reject_of_rejected": 0.0,
+        "prevalence_in_band": 0.0
+      },
+      "JOINT": {
+        "n": 72,
+        "decision_rate": 1.0,
+        "accept_rate": 0.0,
+        "false_accept_rate": 0.0,
+        "false_accept_of_accepted": null,
+        "prevalence_in_band": 0.0
+      }
+    },
+    "tabpfn_v3": {
+      "Depth": {
+        "n": 72,
+        "decision_rate": 0.3888888888888889,
+        "abstain_rate": 0.6111111111111112,
+        "accept_rate": 0.3888888888888889,
+        "reject_rate": 0.0,
+        "false_accept_rate": 0.0,
+        "false_accept_of_accepted": 0.0,
+        "false_reject_rate": 0.0,
+        "false_reject_of_rejected": null,
+        "prevalence_in_band": 0.8194444444444444
+      },
+      "HB": {
+        "n": 72,
+        "decision_rate": 1.0,
+        "abstain_rate": 0.0,
+        "accept_rate": 0.0,
+        "reject_rate": 1.0,
+        "false_accept_rate": 0.0,
+        "false_accept_of_accepted": null,
+        "false_reject_rate": 0.0,
+        "false_reject_of_rejected": 0.0,
+        "prevalence_in_band": 0.0
+      },
+      "JOINT": {
+        "n": 72,
+        "decision_rate": 1.0,
+        "accept_rate": 0.0,
+        "false_accept_rate": 0.0,
+        "false_accept_of_accepted": null,
+        "prevalence_in_band": 0.0
+      }
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "nominal": 0.8,
+  "target": "Depth",
+  "by_model": {
+    "ngb": {
+      "cvplus": 0.819,
+      "split": 0.692,
+      "nexcp": 0.778
+    },
+    "tabpfn_v25": {
+      "cvplus": 0.806,
+      "split": 0.692,
+      "nexcp": 0.806
+    },
+    "tabpfn_v2": {
+      "cvplus": 0.819,
+      "split": 0.769,
+      "nexcp": 0.736
+    },
+    "tabpfn_v3": {
+      "cvplus": 0.819,
+      "split": 0.75,
+      "nexcp": 0.806
+    }
+  },
+  "tfm_mean": {
+    "cvplus": {
+      "coverage": 0.815,
+      "gap_from_nominal": 0.015
+    },
+    "split": {
+      "coverage": 0.737,
+      "gap_from_nominal": 0.063
+    },
+    "nexcp": {
+      "coverage": 0.783,
+      "gap_from_nominal": 0.017
+    }
+  }
+}

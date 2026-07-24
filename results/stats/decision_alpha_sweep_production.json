@@ -1,0 +1,96 @@
+{
+  "tier": "production",
+  "conformal": "nexcp",
+  "sweep_alpha": [
+    {
+      "alpha": 0.4,
+      "models": {
+        "ngb": {
+          "n": 72,
+          "decision_rate": 0.6666666666666666,
+          "accept_rate": 0.4444444444444444,
+          "false_accept_rate": 0.013888888888888888,
+          "false_accept_of_accepted": 0.03125,
+          "prevalence_in_band": 0.6527777777777778
+        },
+        "tabiclv2": {
+          "n": 72,
+          "decision_rate": 0.6111111111111112,
+          "accept_rate": 0.4444444444444444,
+          "false_accept_rate": 0.013888888888888888,
+          "false_accept_of_accepted": 0.03125,
+          "prevalence_in_band": 0.6527777777777778
+        },
+        "tabpfn_v25": {
+          "n": 72,
+          "decision_rate": 0.5,
+          "accept_rate": 0.3333333333333333,
+          "false_accept_rate": 0.0,
+          "false_accept_of_accepted": 0.0,
+          "prevalence_in_band": 0.6527777777777778
+        },
+        "tabpfn_v2": {
+          "n": 72,
+          "decision_rate": 0.5555555555555556,
+          "accept_rate": 0.3888888888888889,
+          "false_accept_rate": 0.013888888888888888,
+          "false_accept_of_accepted": 0.03571428571428571,
+          "prevalence_in_band": 0.6527777777777778
+        },
+        "tabpfn_v3": {
+          "n": 72,
+          "decision_rate": 0.5,
+          "accept_rate": 0.4444444444444444,
+          "false_accept_rate": 0.013888888888888888,
+          "false_accept_of_accepted": 0.03125,
+          "prevalence_in_band": 0.6527777777777778
+        }
+      }
+    },
+    {
+      "alpha": 0.2,
+      "models": {
+        "ngb": {
+          "n": 72,
+          "decision_rate": 0.16666666666666666,
+          "accept_rate": 0.1111111111111111,
+          "false_accept_rate": 0.0,
+          "false_accept_of_accepted": 0.0,
+          "prevalence_in_band": 0.6527777777777778
+        },
+        "tabiclv2": {
+          "n": 72,
+          "decision_rate": 0.5,
+          "accept_rate": 0.3333333333333333,
+          "false_accept_rate": 0.0,
+          "false_accept_of_accepted": 0.0,
+          "prevalence_in_band": 0.6527777777777778
+        },
+        "tabpfn_v25": {
+          "n": 72,
+          "decision_rate": 0.5,
+          "accept_rate": 0.3333333333333333,
+          "false_accept_rate": 0.013888888888888888,
+          "false_accept_of_accepted": 0.041666666666666664,
+          "prevalence_in_band": 0.6527777777777778
+        },
+        "tabpfn_v2": {
+          "n": 72,
+          "decision_rate": 0.2777777777777778,
+          "accept_rate": 0.2777777777777778,
+          "false_accept_rate": 0.013888888888888888,
+          "false_accept_of_accepted": 0.05,
+          "prevalence_in_band": 0.6527777777777778
+        },
+        "tabpfn_v3": {
+          "n": 72,
+          "decision_rate": 0.2777777777777778,
+          "accept_rate": 0.2777777777777778,
+          "false_accept_rate": 0.0,
+          "false_accept_of_accepted": 0.0,
+          "prevalence_in_band": 0.6527777777777778
+        }
+      }
+    }
+  ]
+}

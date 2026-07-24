@@ -1,0 +1,109 @@
+{
+  "test": "Friedman across models on macro-RMSE (regime=full)",
+  "block_definition": "fold for cv=logo (seeds averaged within fold); seed for cv=holdout (each seed is a fresh split)",
+  "n_blocks": 15,
+  "blocks": [
+    {
+      "dataset": "ebw",
+      "replicate": "fold",
+      "fold": 0,
+      "seeds_averaged": 10
+    },
+    {
+      "dataset": "ebw",
+      "replicate": "fold",
+      "fold": 1,
+      "seeds_averaged": 10
+    },
+    {
+      "dataset": "ebw",
+      "replicate": "fold",
+      "fold": 2,
+      "seeds_averaged": 10
+    },
+    {
+      "dataset": "ebw",
+      "replicate": "fold",
+      "fold": 3,
+      "seeds_averaged": 10
+    },
+    {
+      "dataset": "ebw",
+      "replicate": "fold",
+      "fold": 4,
+      "seeds_averaged": 10
+    },
+    {
+      "dataset": "ebw",
+      "replicate": "fold",
+      "fold": 5,
+      "seeds_averaged": 10
+    },
+    {
+      "dataset": "ebw",
+      "replicate": "fold",
+      "fold": 6,
+      "seeds_averaged": 10
+    },
+    {
+      "dataset": "ebw",
+      "replicate": "fold",
+      "fold": 7,
+      "seeds_averaged": 10
+    },
+    {
+      "dataset": "ebw",
+      "replicate": "fold",
+      "fold": 8,
+      "seeds_averaged": 10
+    },
+    {
+      "dataset": "ebw",
+      "replicate": "fold",
+      "fold": 9,
+      "seeds_averaged": 10
+    },
+    {
+      "dataset": "ebw",
+      "replicate": "fold",
+      "fold": 10,
+      "seeds_averaged": 10
+    },
+    {
+      "dataset": "ebw",
+      "replicate": "fold",
+      "fold": 11,
+      "seeds_averaged": 10
+    },
+    {
+      "dataset": "ebw",
+      "replicate": "fold",
+      "fold": 12,
+      "seeds_averaged": 10
+    },
+    {
+      "dataset": "ebw",
+      "replicate": "fold",
+      "fold": 13,
+      "seeds_averaged": 10
+    },
+    {
+      "dataset": "ebw",
+      "replicate": "fold",
+      "fold": 14,
+      "seeds_averaged": 10
+    }
+  ],
+  "models": [
+    "catboost",
+    "mlp",
+    "ngb",
+    "tabiclv2",
+    "tabpfn_v2",
+    "tabpfn_v25",
+    "tabpfn_v3",
+    "xgb"
+  ],
+  "friedman_stat": 15.222222222222229,
+  "p_value": 0.03325403127682641
+}
