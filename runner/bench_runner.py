@@ -59,10 +59,15 @@ from pathlib import Path
 # PER-UNIT WORK — adapted for A (EBW regression). Orchestration below is base.  #
 # CURRENCY CHECKPOINT (Stage C): pin tabpfn (v3), Mitra adapter, ngboost.       #
 # --------------------------------------------------------------------------- #
-TFM_MODELS = {"tabpfn_v2", "tabpfn_v25", "tabpfn_v3", "mitra"}
+TFM_MODELS = {"tabpfn_v2", "tabpfn_v25", "tabpfn_v3", "mitra", "tabiclv2"}
 CLASSICAL = {"catboost", "xgb", "ngb", "mlp"}
-DISTRIBUTIONAL = {"tabpfn_v2", "tabpfn_v25", "tabpfn_v3", "mitra", "ngb"}  # give a predictive dist
-MODEL_CAPS = {"tabicl": {"classification"}}  # AR-02 cap: excluded from this regression task
+AUTOML = {"autogluon"}
+DISTRIBUTIONAL = {"tabpfn_v2", "tabpfn_v25", "tabpfn_v3", "mitra", "ngb",
+                  "tabiclv2", "autogluon"}  # give a predictive dist / quantile grid
+MODEL_CAPS = {"tabicl": {"classification"}}  # v1 is classification-only; use "tabiclv2" for regression
+
+_TABICL_CKPT = os.environ.get("TABICLV2_CKPT", "")  # empty -> library default v2 regressor
+_AUTOGLUON_TIME = int(os.environ.get("AUTOGLUON_TIME_LIMIT", "60"))  # seconds per fit
 
 _TABPFN_CACHE = os.path.expanduser(os.environ.get("TABPFN_CACHE_DIR", "~/.cache/tabpfn"))
 TABPFN_CKPT = {
@@ -271,6 +276,19 @@ def get_model(model: str, meta: dict, seed: int):
         # Optional: wire the AutoGluon mitra-regressor adapter at the currency check.
         # Until then, skip cleanly (recorded, not failed) so the batch stays green.
         raise _Skip("mitra adapter not wired (see BUILD.md) — include only after wiring")
+    if model == "tabiclv2":
+        # TabICLv2 (Qu et al. 2026) does regression AND emits quantiles in one forward
+        # pass, like TabPFN. v1 was classification-only (hence MODEL_CAPS['tabicl']); the
+        # v2 regressor checkpoint is a different model, keyed 'tabiclv2' to avoid confusion.
+        # In-context, so GPU pays (same reasoning as TabPFN). Handle only; predict()
+        # instantiates per target.
+        return ("tabiclv2", _TABICL_CKPT)
+    if model == "autogluon":
+        # AutoGluon TabularPredictor as the AutoML-ensemble family. It is NOT a new winner
+        # we are chasing — it is a diverse predictor over which the SAME acceptance layer is
+        # shown to work. Quantiles come from problem_type='quantile'. CPU (AutoML search);
+        # per-fit time limit keeps the unit bounded. Handle only; predict() fits per target.
+        return ("autogluon", None)
     if model == "catboost":
         from catboost import CatBoostRegressor
         from sklearn.multioutput import MultiOutputRegressor
@@ -365,6 +383,39 @@ def infer(kind, obj, X_tr, Y_tr, X_te, meta, prefitted=False):
             qs = reg.predict(X_te, output_type="quantiles", quantiles=list(QLEVELS))
             grids.append(np.stack([np.asarray(q) for q in qs], 1))   # (n_te, levels)
         return np.stack(means, 1), np.stack(grids, 1)               # mean (n,t); Q (n,t,levels)
+    if kind == "tabiclv2":
+        from tabicl import TabICLRegressor
+        means, grids = [], []
+        for j in range(Y_tr.shape[1]):                 # single-target, loop like TabPFN
+            kw = {"device": TFM_DEVICE}
+            if obj:                                    # obj = checkpoint path or "" for default
+                kw["model_path"] = obj                 # verified kwarg (not 'checkpoint')
+            reg = TabICLRegressor(**kw)
+            reg.fit(X_tr, Y_tr[:, j])
+            means.append(np.asarray(reg.predict(X_te, output_type="mean")))
+            # verified API: output_type='quantiles' with alphas=<levels> -> (levels, n_te)
+            qs = np.asarray(reg.predict(X_te, output_type="quantiles", alphas=list(QLEVELS)))
+            if qs.shape[0] == len(QLEVELS) and qs.shape[0] != X_te.shape[0]:
+                qs = qs.T                              # -> (n_te, levels)
+            grids.append(qs)
+        return np.stack(means, 1), np.stack(grids, 1)              # mean (n,t); Q (n,t,levels)
+    if kind == "autogluon":
+        import pandas as pd
+        from autogluon.tabular import TabularPredictor
+        feat = [f"f{i}" for i in range(X_tr.shape[1])]
+        means, grids = [], []
+        for j in range(Y_tr.shape[1]):
+            df = pd.DataFrame(X_tr, columns=feat); df["y"] = Y_tr[:, j]
+            te = pd.DataFrame(X_te, columns=feat)
+            # quantile predictor over our exact grid; median (0.5) doubles as the point mean
+            pred = TabularPredictor(label="y", problem_type="quantile",
+                                    quantile_levels=list(QLEVELS)).fit(
+                df, time_limit=_AUTOGLUON_TIME, verbosity=0)
+            q = pred.predict(te)                       # DataFrame, columns = quantile levels
+            q = np.asarray(q)[:, :len(QLEVELS)]        # (n_te, levels)
+            grids.append(q)
+            means.append(q[:, list(QLEVELS).index(0.5)])   # median as the point estimate
+        return np.stack(means, 1), np.stack(grids, 1)
     if not prefitted:
         obj.fit(X_tr, Y_tr)
     mean = np.asarray(obj.predict(X_te))
@@ -473,9 +524,12 @@ def run_unit(dataset: str, regime: str, model: str, seed: int, fold: int, out_pa
         # A control that cannot fit at this sample size (e.g. NGBoost at n~14) is a
         # graceful skip, NOT a failure: the manifest stays clean and the did-not-fit
         # fact is recorded as data for the "TFMs fit where classical baselines do not"
-        # finding. (TFM inference does not hit this in practice.)
+        # finding. (TFM inference does not hit this in practice.) The exception MESSAGE
+        # is kept, not just the type, so a missing backend (e.g. AutoGluon lazy-loading
+        # lightgbm/torch at fit time) is named rather than opaque.
+        msg = str(e).replace("\n", " ")[:200]
         _write_skip(out_path, dataset, regime, model, seed, fold,
-                    f"did-not-fit@n{len(X_tr)}:{type(e).__name__}")
+                    f"did-not-fit@n{len(X_tr)}:{type(e).__name__}:{msg}")
         return {"skipped": True}
 
     result = {

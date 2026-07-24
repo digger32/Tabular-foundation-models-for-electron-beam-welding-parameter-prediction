@@ -179,8 +179,91 @@ def cvplus_offset(scores_other, alpha):
     return float(np.quantile(scores_other, k, method="higher"))
 
 
+def _weighted_quantile(values, weights, q):
+    """The level-q weighted quantile of `values` under non-negative `weights`.
+
+    Used by the non-exchangeable (nexCP) offset. Follows Barber, Candes, Ramdas and
+    Tibshirani (2023): reweighting the empirical distribution of conformity scores by
+    fixed, prespecified weights yields a coverage guarantee that degrades only by the
+    weighted total-variation gap when exchangeability fails, with no assumption on the
+    joint distribution. The weights here are fixed a priori (a kernel on the held-out
+    regime's position in parameter space), NOT estimated from the data, which is what
+    keeps them stable on a 15-regime campaign.
+    """
+    values = np.asarray(values); weights = np.asarray(weights, dtype=float)
+    if values.size == 0:
+        return 0.0
+    order = np.argsort(values)
+    v = values[order]; w = weights[order]
+    cw = np.cumsum(w)
+    if cw[-1] <= 0:
+        return float(np.quantile(values, q, method="higher"))
+    cw = cw / cw[-1]
+    idx = int(np.searchsorted(cw, q))
+    return float(v[min(idx, len(v) - 1)])
+
+
+def nexcp_offset(scores_by_fold, centers, target_fold, alpha, bw=None):
+    """Non-exchangeable CV+ offset for `target_fold`.
+
+    scores_by_fold : {fold: score_array}   conformity scores of the OTHER folds
+    centers        : {fold: param_vector}  standardised parameter centre of each regime
+    The weight of every calibration score is a Gaussian kernel of the distance between
+    its own regime centre and the held-out regime's centre: a regime close in parameter
+    space to the held-out one weighs more. Weights are prespecified (fixed bandwidth),
+    per Barber et al. (2023); nothing is estimated from the residuals.
+    """
+    vals, wts = [], []
+    d_all = [np.linalg.norm(centers[f] - centers[target_fold])
+             for f in scores_by_fold if f != target_fold]
+    if bw is None:
+        bw = float(np.median(d_all)) if d_all and np.median(d_all) > 0 else 1.0
+    for f, s in scores_by_fold.items():
+        if f == target_fold:
+            continue
+        d = float(np.linalg.norm(centers[f] - centers[target_fold]))
+        w = np.exp(-(d ** 2) / (2 * bw ** 2))
+        vals.append(np.asarray(s)); wts.append(np.full(len(s), w))
+    if not vals:
+        return 0.0
+    vals = np.concatenate(vals); wts = np.concatenate(wts)
+    n = len(vals)
+    k = min(max(np.ceil((n + 1) * (1 - alpha)) / n, 0.0), 1.0)
+    return _weighted_quantile(vals, wts, k)
+
+
+def regime_centers(dataset, datasets_yaml, folds):
+    """Standardised parameter centre of each LOGO fold, read from the source data.
+
+    nexCP weights need each held-out regime's position in parameter space. The units
+    store predictions but not inputs, and the fold index is a deterministic function of
+    the regime grouping, so we recover the centres from the source table keyed by the
+    same group_by columns the runner used to build the folds. Returns {fold: vector} with
+    inputs standardised across the dataset (so distances are scale-free), or None if the
+    inputs cannot be located (callers then fall back to unweighted CV+).
+    """
+    try:
+        import csv, yaml
+        cfg = yaml.safe_load(open(datasets_yaml))[dataset]
+        src = Path(datasets_yaml).parent / cfg["path"]
+        group_by = cfg["group_by"]
+        rows = list(csv.DictReader(open(src)))
+        keys = sorted({tuple(r[c] for c in group_by) for r in rows})
+        X = np.array([[float(r[c]) for c in group_by] for r in rows])
+        Xs = (X - X.mean(0)) / (X.std(0) + 1e-12)
+        key_of = [keys.index(tuple(r[c] for c in group_by)) for r in rows]
+        centers = {}
+        for fold in folds:
+            mask = np.array([k == fold for k in key_of])
+            if mask.any():
+                centers[fold] = Xs[mask].mean(0)
+        return centers if len(centers) == len(set(folds)) else None
+    except Exception:
+        return None
+
+
 def conformal_intervals(units, target_idx, alpha, ratio=False, mode="cvplus",
-                        cal_frac=0.2, seed=0):
+                        cal_frac=0.2, seed=0, centers=None):
     """Conformalised intervals for one model.
 
     mode='cvplus'  offset for fold g from the scores of all OTHER folds (no fold
@@ -228,9 +311,12 @@ def conformal_intervals(units, target_idx, alpha, ratio=False, mode="cvplus",
             out_f.append(np.full(len(yy), f))
     else:
         for f, (yy, lo, hi) in packed.items():
-            other = np.concatenate([s for g, s in scores.items() if g != f]) \
-                    if len(scores) > 1 else scores[f]
-            off = cvplus_offset(other, alpha)
+            if mode == "nexcp" and centers is not None:
+                off = nexcp_offset(scores, centers, f, alpha)
+            else:
+                other = np.concatenate([s for g, s in scores.items() if g != f]) \
+                        if len(scores) > 1 else scores[f]
+                off = cvplus_offset(other, alpha)
             out_y.append(yy); out_lo.append(lo - off); out_hi.append(hi + off)
             out_f.append(np.full(len(yy), f))
 
@@ -273,7 +359,7 @@ def score_decisions(y, lo, hi, band_lo, band_hi):
 
 
 def evaluate(units_by_model, spec, tier, alpha, joint_correction="bonferroni",
-             mode="cvplus", cal_frac=0.2):
+             mode="cvplus", cal_frac=0.2, centers=None):
     targets = spec["targets"]
     crits = [t for t in list(targets) + ["HB"]
              if any(v is not None for v in band_of(spec, tier, t))]
@@ -289,7 +375,8 @@ def evaluate(units_by_model, spec, tier, alpha, joint_correction="bonferroni",
             is_ratio = (c == "HB")
             idx = 0 if is_ratio else list(targets).index(c)
             y, lo, hi = conformal_intervals(units, idx, a_eff, ratio=is_ratio,
-                                            mode=mode, cal_frac=cal_frac)[:3]
+                                            mode=mode, cal_frac=cal_frac,
+                                            centers=centers)[:3]
             bl, bh = band_of(spec, tier, c)
             rec[c] = score_decisions(y, lo, hi, bl, bh)
             acc, rej = decide(lo, hi, bl, bh)
@@ -310,7 +397,7 @@ def evaluate(units_by_model, spec, tier, alpha, joint_correction="bonferroni",
     return out
 
 
-def sweep(units_by_model, spec, tier, alpha, scales, mode="cvplus"):
+def sweep(units_by_model, spec, tier, alpha, scales, mode="cvplus", centers=None):
     """Scale the band half-width about its centre and re-decide. The reportable
     number is the tightest band each model still certifies at risk alpha."""
     targets = list(spec["targets"])
@@ -326,12 +413,12 @@ def sweep(units_by_model, spec, tier, alpha, scales, mode="cvplus"):
                 tightened["acceptance"][tier][t] = {"lo": c - h, "hi": c + h}
             else:
                 tightened["acceptance"][tier][t] = {"lo": lo, "hi": hi}   # one-sided: unscaled
-        r = evaluate(units_by_model, tightened, tier, alpha, mode=mode)
+        r = evaluate(units_by_model, tightened, tier, alpha, mode=mode, centers=centers)
         rows.append({"scale": s, "models": {m: v["JOINT"] for m, v in r["models"].items()}})
     return {"tier": tier, "alpha": alpha, "conformal": mode, "sweep": rows}
 
 
-def sweep_alpha(units_by_model, spec, tier, alphas, mode="cvplus"):
+def sweep_alpha(units_by_model, spec, tier, alphas, mode="cvplus", centers=None):
     """Sweep the RISK, at the real tolerance. The band sweep asks 'how tight a tolerance
     can this model certify'; this asks the dual and more actionable question: 'at the
     tolerance the shop actually uses, what risk must I accept to get a decision at all'.
@@ -344,7 +431,7 @@ def sweep_alpha(units_by_model, spec, tier, alphas, mode="cvplus"):
     rows = []
     for a in alphas:
         try:
-            r = evaluate(units_by_model, spec, tier, a, mode=mode)
+            r = evaluate(units_by_model, spec, tier, a, mode=mode, centers=centers)
         except ValueError as e:
             rows.append({"alpha": a, "unrepresentable": str(e)}); continue
         rows.append({"alpha": a, "models": {m: v["JOINT"] for m, v in r["models"].items()}})
@@ -361,9 +448,12 @@ def main():
     ap.add_argument("--alpha", type=float, default=0.05, help="risk of a false accept")
     ap.add_argument("--tier", default="production", help="acceptance tier in datasets.yaml")
     ap.add_argument("--joint-correction", default="bonferroni", choices=["bonferroni", "none"])
-    ap.add_argument("--conformal", default="cvplus", choices=["cvplus", "split"],
+    ap.add_argument("--conformal", default="cvplus", choices=["cvplus", "split", "nexcp"],
                     help="cvplus: no settings spent on calibration, guarantee 1-2a. "
-                         "split: textbook 1-a, but withdraws --cal-frac of the settings.")
+                         "split: textbook 1-a, but withdraws --cal-frac of the settings. "
+                         "nexcp: non-exchangeable CV+ (Barber et al. 2023) with fixed "
+                         "regime-proximity weights, robust to the cross-regime shift LOGO "
+                         "induces; coverage gap is bounded by the weighted TV distance.")
     ap.add_argument("--cal-frac", dest="cal_frac", type=float, default=0.2,
                     help="split only: fraction of GROUPS withdrawn for calibration")
     ap.add_argument("--sweep", action="store_true", help="sweep the tolerance band")
@@ -381,10 +471,19 @@ def main():
     for u in units:
         by_model[u["model"]].append(u)
 
+    centers = None
+    if a.conformal == "nexcp":
+        all_folds = sorted({u["fold"] for u in units})
+        centers = regime_centers(a.dataset, str(Path(a.data_dir) / "datasets.yaml"), all_folds)
+        if centers is None:
+            sys.exit("[decision] nexcp needs regime centres from the source data; "
+                     "could not locate inputs via datasets.yaml group_by. "
+                     "Check data-dir and that the source table has the group_by columns.")
+
     outdir = Path(a.outdir) / "stats"; outdir.mkdir(parents=True, exist_ok=True)
     res = evaluate(by_model, spec, a.tier, a.alpha, a.joint_correction,
-                   mode=a.conformal, cal_frac=a.cal_frac)
-    tag = a.tier if a.conformal == "cvplus" else f"{a.tier}_split"
+                   mode=a.conformal, cal_frac=a.cal_frac, centers=centers)
+    tag = a.tier if a.conformal == "cvplus" else f"{a.tier}_{a.conformal}"
     (outdir / f"decision_{tag}.json").write_text(json.dumps(res, indent=2))
     print(f"[decision] tier={a.tier} alpha={a.alpha} conformal={a.conformal} "
           f"-> stats/decision_{tag}.json")
@@ -394,13 +493,14 @@ def main():
               f"false accepts {j['false_accept_rate']:5.1%}")
 
     if a.sweep_alpha:
-        s = sweep_alpha(by_model, spec, a.tier, [0.4, 0.2], mode=a.conformal)
+        s = sweep_alpha(by_model, spec, a.tier, [0.4, 0.2], mode=a.conformal, centers=centers)
         (outdir / f"decision_alpha_sweep_{a.tier}.json").write_text(json.dumps(s, indent=2))
         print(f"[decision] alpha sweep -> stats/decision_alpha_sweep_{a.tier}.json")
 
     if a.sweep:
         s = sweep(by_model, spec, a.tier, a.alpha,
-                  [round(x, 2) for x in np.arange(0.1, 1.55, 0.05)], mode=a.conformal)
+                  [round(x, 2) for x in np.arange(0.1, 1.55, 0.05)], mode=a.conformal,
+                  centers=centers)
         (outdir / "decision_sweep.json").write_text(json.dumps(s, indent=2))
         print("[decision] sweep -> stats/decision_sweep.json")
 
