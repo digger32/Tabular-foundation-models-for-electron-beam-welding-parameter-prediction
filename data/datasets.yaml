@@ -7,6 +7,43 @@ ebw:
   path: ebw_real_72.csv
   inputs: [IW, IF, VW, FP]
   targets: [Depth, Width]
+  units: {IW: mA, IF: mA, VW: rev/min, FP: mm, Depth: mm, Width: mm}
+  # STRUCTURE (corrected 2026-07): the 72 rows are NOT 72 independent experiments.
+  # They are 18 welded coupons, each destructively sectioned into 4 transverse
+  # metallographic cross-sections (18 x 4 = 72). Several coupons share a regime, so
+  # there are only 15 DISTINCT settings; 13 settings carry 4 rows, one carries 8
+  # (2 coupons) and one carries 12 (3 coupons — the regime that went to production).
+  # The 4 rows of a coupon have BIT-IDENTICAL inputs and differ only in measured
+  # geometry, so a random split places the same input vector in train and test.
+  # Group by SETTING, not by coupon: two coupons welded at one setting still share
+  # the input vector, so grouping by coupon would leave the leakage in place.
+  group_by: [IW, IF, VW, FP]
+  cv: logo                 # leave-one-regime-out: 15 folds, each holds out one setting
+  # Within-setting measurement scatter (the irreducible floor for any model here):
+  #   Depth sd = 0.041 mm, Width sd = 0.031 mm
+  # Between-setting scatter (the signal a model must actually explain):
+  #   Depth sd = 0.222 mm, Width sd = 0.257 mm
+  acceptance:
+    # Engineering acceptance bands for this class of thin-walled aerospace weldment.
+    # Generic values; no controlled document is cited or redistributed anywhere in
+    # this repository. `lo: null` / `hi: null` = one-sided.
+    production:            # tier A: the band the equipment can hold and that was
+      Depth: {lo: 1.0, hi: 1.5}      # validated to keep bearing-seat distortion <=2 um.
+      Width: {lo: 1.6, hi: 2.2}      # Depth is ONE-SIDED about a 1.0 nominal (+0.5/-0):
+      HB:    {lo: null, hi: null}    # under-penetration is a defect, over-penetration
+                                     # up to +0.5 is tolerated. 47/72 rows lie inside.
+    design:                # tier B: the design requirement. 0/72 rows meet it — the
+      Depth: {lo: 1.0, hi: 1.5}      # machine's width capability is 1.6-2.1 mm, so the
+      Width: {lo: null, hi: 1.5}     # band is unreachable BY THE EQUIPMENT, not by the
+      HB:    {lo: null, hi: null}    # model. Reported as an honest negative.
+    ratio:                 # tier C: the process-development recommendation for minimum
+      Depth: {lo: 1.0, hi: 2.0}      # distortion — depth 1-2 mm AND H/B >= 1.
+      Width: {lo: null, hi: null}    # 0/72 rows meet it; best regime in the whole
+      HB:    {lo: 1.0, hi: null}     # campaign reaches H/B = 0.773 (needs +29%).
+  derived_targets:
+    HB: "Depth / Width"    # penetration-to-width ratio; predicted as a ratio of the two
+                           # predicted geometries, with its own conformal interval (a
+                           # ratio interval does NOT follow from marginal quantiles).
   source: "Vendored (also public on Kaggle); IJAMT reproducibility set (72 rows)."
 
 # ---- Public welding regression sets (external validity). ----
