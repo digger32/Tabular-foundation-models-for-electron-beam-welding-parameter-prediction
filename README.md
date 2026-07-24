@@ -1,86 +1,85 @@
 # Tabular foundation models for electron-beam welding parameter prediction
 
-Reproducibility package for the study *In-context tabular foundation models for
-calibrated weld-geometry prediction and acceptance decisions in electron-beam
-welding* (Kurashkin, Tynchenko, Borodulin, Nelyub, Kalutsky, Connie; under review).
+Reproducibility package for *Risk-controlled acceptance decisions from calibrated
+predictions under grouped distribution shift, with electron-beam weld qualification as a
+case study* (Kurashkin, Tynchenko, Borodulin, Nelyub, Kalutsky, Kukartsev, Connie; under
+review at *Reliability Engineering & System Safety*).
 
-The study benchmarks TabPFN v2 / v2.5 / v3 (in-context, no training) against
-nested-CV-tuned CatBoost, XGBoost, NGBoost and an MLP, plus a CTGAN/TVAE
-augmentation arm, on a 72-row electron-beam welding (EBW) campaign and two public
-gas-metal-arc-welding (GMAW) datasets. Evaluation is leakage-controlled: the EBW
-coupons are sectioned four times each, so whole welding schedules are held out
-(leave-one-regime-out, 15 folds); the GMAW datasets are split by welding run. On
-top of accuracy (per-target RMSE/MAE/R2 with Friedman/Nemenyi and Wilcoxon–Holm
-statistics, and an optimism gap for every tuned control), the package audits
-interval calibration (coverage, ECE, CRPS, reliability), conformalises the
-intervals (cross-validation-plus, with split conformal as a comparison), and
-converts them into accept / reject / abstain decisions against the engineering
-tolerance. Every prediction persists its full quantile grid, so the decision
-layer can be re-run at any admissible risk level without re-running the
-benchmark. The final pass sits behind an automated review-proofing gate.
+The paper turns a calibrated predictive interval into an accept, reject or abstain
+qualification decision against an engineering tolerance at a controlled consumer's risk,
+so that some coupons can skip destructive metallographic sectioning. Eight predictors are
+compared, four tolerance criteria are evaluated, and three conformal constructions are set
+side by side; the headline finding is that on small grouped data the choice of conformal
+construction, not the choice of predictor, decides whether a decision layer functions at
+all.
+
+## What changed since v2.0
+
+v2.0 accompanied an earlier version of this work aimed at a different journal. It is
+superseded, and the numbers in it do **not** correspond to the present manuscript.
+
+| | v2.0 | this release |
+|---|---|---|
+| predictors | 7 | **8** (TabICLv2 added) |
+| omnibus | 30 blocks, chi-square 78.59, no block definition recorded | **15 blocks, chi-square 15.22**, seeds averaged within fold |
+| conformal constructions | cross-validation-plus, split | **cross-validation-plus, split, non-exchangeable (nexCP)** |
+| acceptance-decision results | not included | **11 `decision_*.json` files, three constructions, three tiers, risk and band sweeps** |
+| AutoGluon negative control | absent | present in the runner |
+| figure names | `fig01`--`fig12`, `figB1`, `figB2` | `fig05`--`fig12` (article), `figS1`--`figS5` (supplement) |
 
 ## Layout
-- `runner/bench_runner.py` - job-based runner (one unit = dataset × regime ×
-  model × seed × fold; resume by skipping existing outputs, per-unit hard
-  timeout; foundation models on GPU, tree controls pinned to CPU).
-- `runner/stats.py` - aggregation and statistics (`stats/*.json`).
-- `runner/decision.py` - conformalisation and the acceptance layer.
-- `runner/review_gate.py` + `runner/gate_config.yaml` - the pre-freeze gate.
-- `runner/make_figures.py`, `runner/make_fig01_framework.py` - all figures.
-- `data/datasets.yaml` - dataset registry; `data/ebw_real_72.csv` (vendored).
-- `fetch_data.py` - pulls the external GMAW datasets on a networked machine.
-- `RUN_ORDER.md`, `experiments/exp_plan.md` - run order and the experiment plan.
 
-## Quickstart
+```
+data/        ebw_real_72.csv   the electron-beam campaign, 72 cross-sections
+             datasets.yaml     dataset and split declarations
+runner/      bench_runner.py   one job per dataset x regime x model x fold x seed
+             stats.py          per-target metrics, omnibus, post-hoc, calibration
+             decision.py       conformal constructions and the acceptance layer
+             coverage_report.py  coverage by construction
+             make_figures.py   every data figure in the article and the supplement
+             review_gate.py    the pre-freeze gate (gate_config.yaml)
+results/stats/                 the frozen statistics behind every table and figure
+```
+
+## Reproducing the reported numbers
+
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python fetch_data.py --check          # place GMAW CSVs per data/datasets.yaml
-export EBW_DEVICE=cuda EBW_TREE_CPU=1 # hybrid placement: TFMs on GPU, trees on CPU
-python runner/bench_runner.py --datasets ebw,gmaw_e1,gmaw_e2 \
-  --protocols full,fewshot50,fewshot25,augment \
-  --models tabpfn_v2,tabpfn_v25,tabpfn_v3,catboost,xgb,ngb,mlp \
-  --seeds 0,1,2,3,4,5,6,7,8,9 --outdir runs/final --no-resume
-python runner/stats.py       --in runs/final --out runs/final
-python runner/review_gate.py runs/final --config runner/gate_config.yaml  # must PASS
-python runner/decision.py    --in runs/final --out runs/final --dataset ebw --regime full
+python fetch_data.py                       # retrieves the two public GMAW datasets
+python runner/bench_runner.py --out runs/final --no-resume
+python runner/stats.py      --in runs/final --out runs/final
+python runner/decision.py   --in runs/final --out runs/final --dataset ebw \
+        --alpha 0.2 --tier production --conformal nexcp --sweep-alpha --data-dir data
+python runner/coverage_report.py --in runs/final
+python runner/review_gate.py runs/final --config runner/gate_config.yaml
 python runner/make_figures.py --in runs/final --out outputs/figures
 ```
-TabPFN checkpoints are read from `~/.cache/tabpfn` (override via `TABPFN_*_CKPT`).
-For a long run, start it inside `tmux new -s ebw_final` and detach.
 
-## Reproducing the published results
-The frozen run behind the manuscript comprises **4,760 units** (EBW: 15
-leave-one-regime-out folds × 4 regimes × 7 models × 10 seeds; each GMAW dataset:
-4 regimes × 7 models × 10 seed-indexed group splits). Every unit terminated and
-was recorded: 4,036 computed, 510 are by-design skips (the augmentation regime is
-defined for the classical controls only), and 214 are recorded NGBoost fitting
-failures concentrated in the few-shot regimes. The run was executed from scratch
-with `--no-resume` under the hybrid device configuration above and passed the
-gate before any number was frozen; the commands are exactly those of the
-Quickstart. `results/stats/` holds the aggregated statistics of that run,
-`results/manifest.jsonl` its unit-level log, and `figures/` the figures as
-published.
+The values in `results/stats/` are the frozen ones the article reports. `omnibus.json`
+must show `n_blocks` 15 and a `block_definition` of "fold for cv=logo (seeds averaged
+within fold)": blocking on (fold x seed) treats deterministic seed copies as independent
+observations and inflates the test.
 
-## Data
-- EBW (72 cross-sections, 18 coupons, 15 schedules): included here; the dataset
-  first appeared in the authors' earlier benchmark, archived at Zenodo
-  (https://doi.org/10.5281/zenodo.21204586).
-- GMAW (external validity): Mendeley Data, https://doi.org/10.17632/2nyjpb89bf.1
-  (CC BY 4.0).
+## Scope of this release
 
-## Citing
-If you use this code or the EBW dataset, please cite the manuscript and this
-archive:
+Included: the electron-beam dataset, the split declarations, the full runner, and the
+frozen aggregate statistics, which is everything needed to check the reported tables,
+figures and decisions.
 
-> Kurashkin, S.O.; Tynchenko, V.S.; Borodulin, A.S.; Nelyub, V.A.; Kalutsky,
-> N.O.; Connie, T. In-context tabular foundation models for calibrated
-> weld-geometry prediction and acceptance decisions in electron-beam welding.
-> Under review, 2026.
+Not included: the per-unit prediction files (roughly 4,700 JSON records carrying `y_test`,
+`pred_mean` and the full quantile grid `pred_q` of every unit). They are large, and the
+aggregate statistics above are derived from them. Anyone wishing to re-derive the
+intervals from raw predictions can regenerate them with the command sequence above, or
+request the archive from the corresponding author.
 
-> Kurashkin, S.O.; Tynchenko, V.S.; Borodulin, A.S.; Nelyub, V.A.; Kalutsky,
-> N.O.; Connie, T. Tabular Foundation Models for Electron-Beam Welding Parameter
-> Prediction: Code, Data and Frozen Results. Zenodo, 2026.
-> https://doi.org/10.5281/zenodo.21432301
+The two gas-metal-arc-welding datasets are public and are fetched by `fetch_data.py`
+rather than redistributed here.
 
-Repository: https://github.com/digger32/Tabular-foundation-models-for-electron-beam-welding-parameter-prediction
+## Citation
+
+Cite the article. If the software itself needs citing, use the Zenodo record for this
+release.
+
+## Licence
+
+See `LICENSE`.
