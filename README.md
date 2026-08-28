@@ -2,7 +2,7 @@
 
 Reproducibility package for *Risk-controlled acceptance decisions from calibrated
 predictions under grouped distribution shift, with electron-beam weld qualification as a
-case study* (Kurashkin, Tynchenko, Borodulin, Nelyub, Kalutsky, Kukartsev, Connie; under
+case study* (Kurashkin, Tynchenko, Borodulin, Connie; under
 review at *Reliability Engineering & System Safety*).
 
 The paper turns a calibrated predictive interval into an accept, reject or abstain
