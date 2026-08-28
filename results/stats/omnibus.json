@@ -1,7 +1,7 @@
 {
   "test": "Friedman across models on macro-RMSE (regime=full)",
   "block_definition": "fold for cv=logo (seeds averaged within fold); seed for cv=holdout (each seed is a fresh split)",
-  "n_blocks": 15,
+  "n_blocks": 35,
   "blocks": [
     {
       "dataset": "ebw",
@@ -92,9 +92,110 @@
       "replicate": "fold",
       "fold": 14,
       "seeds_averaged": 10
+    },
+    {
+      "dataset": "gmaw_e1",
+      "replicate": "seed",
+      "seed": 0
+    },
+    {
+      "dataset": "gmaw_e1",
+      "replicate": "seed",
+      "seed": 1
+    },
+    {
+      "dataset": "gmaw_e1",
+      "replicate": "seed",
+      "seed": 2
+    },
+    {
+      "dataset": "gmaw_e1",
+      "replicate": "seed",
+      "seed": 3
+    },
+    {
+      "dataset": "gmaw_e1",
+      "replicate": "seed",
+      "seed": 4
+    },
+    {
+      "dataset": "gmaw_e1",
+      "replicate": "seed",
+      "seed": 5
+    },
+    {
+      "dataset": "gmaw_e1",
+      "replicate": "seed",
+      "seed": 6
+    },
+    {
+      "dataset": "gmaw_e1",
+      "replicate": "seed",
+      "seed": 7
+    },
+    {
+      "dataset": "gmaw_e1",
+      "replicate": "seed",
+      "seed": 8
+    },
+    {
+      "dataset": "gmaw_e1",
+      "replicate": "seed",
+      "seed": 9
+    },
+    {
+      "dataset": "gmaw_e2",
+      "replicate": "seed",
+      "seed": 0
+    },
+    {
+      "dataset": "gmaw_e2",
+      "replicate": "seed",
+      "seed": 1
+    },
+    {
+      "dataset": "gmaw_e2",
+      "replicate": "seed",
+      "seed": 2
+    },
+    {
+      "dataset": "gmaw_e2",
+      "replicate": "seed",
+      "seed": 3
+    },
+    {
+      "dataset": "gmaw_e2",
+      "replicate": "seed",
+      "seed": 4
+    },
+    {
+      "dataset": "gmaw_e2",
+      "replicate": "seed",
+      "seed": 5
+    },
+    {
+      "dataset": "gmaw_e2",
+      "replicate": "seed",
+      "seed": 6
+    },
+    {
+      "dataset": "gmaw_e2",
+      "replicate": "seed",
+      "seed": 7
+    },
+    {
+      "dataset": "gmaw_e2",
+      "replicate": "seed",
+      "seed": 8
+    },
+    {
+      "dataset": "gmaw_e2",
+      "replicate": "seed",
+      "seed": 9
     }
   ],
   "models": [
+    "autogluon",
     "catboost",
     "mlp",
     "ngb",
@@ -104,6 +205,7 @@
     "tabpfn_v3",
     "xgb"
   ],
-  "friedman_stat": 15.222222222222229,
-  "p_value": 0.03325403127682641
+  "excluded_from_omnibus": [],
+  "friedman_stat": 67.1542857142856,
+  "p_value": 1.8069974745704543e-11
 }

@@ -10,6 +10,40 @@
   "conformal": "cvplus",
   "cal_frac": null,
   "models": {
+    "autogluon": {
+      "Depth": {
+        "n": 72,
+        "decision_rate": 0.2777777777777778,
+        "abstain_rate": 0.7222222222222222,
+        "accept_rate": 0.2777777777777778,
+        "reject_rate": 0.0,
+        "false_accept_rate": 0.0,
+        "false_accept_of_accepted": 0.0,
+        "false_reject_rate": 0.0,
+        "false_reject_of_rejected": null,
+        "prevalence_in_band": 0.7083333333333334
+      },
+      "Width": {
+        "n": 72,
+        "decision_rate": 0.7222222222222222,
+        "abstain_rate": 0.2777777777777778,
+        "accept_rate": 0.7222222222222222,
+        "reject_rate": 0.0,
+        "false_accept_rate": 0.0,
+        "false_accept_of_accepted": 0.0,
+        "false_reject_rate": 0.0,
+        "false_reject_of_rejected": null,
+        "prevalence_in_band": 0.7777777777777778
+      },
+      "JOINT": {
+        "n": 72,
+        "decision_rate": 0.2777777777777778,
+        "accept_rate": 0.2777777777777778,
+        "false_accept_rate": 0.0,
+        "false_accept_of_accepted": 0.0,
+        "prevalence_in_band": 0.6527777777777778
+      }
+    },
     "ngb": {
       "Depth": {
         "n": 72,

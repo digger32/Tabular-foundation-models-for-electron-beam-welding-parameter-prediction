@@ -20,11 +20,11 @@ superseded, and the numbers in it do **not** correspond to the present manuscrip
 
 | | v2.0 | this release |
 |---|---|---|
-| predictors | 7 | **8** (TabICLv2 added) |
-| omnibus | 30 blocks, chi-square 78.59, no block definition recorded | **15 blocks, chi-square 15.22**, seeds averaged within fold |
+| predictors | 7 | **9** (TabICLv2 and AutoGluon added) |
+| omnibus | 30 blocks, chi-square 78.59, no block definition recorded | **35 blocks, chi-square 67.2**, seeds averaged within fold, all three datasets complete |
 | conformal constructions | cross-validation-plus, split | **cross-validation-plus, split, non-exchangeable (nexCP)** |
 | acceptance-decision results | not included | **11 `decision_*.json` files, three constructions, three tiers, risk and band sweeps** |
-| AutoGluon negative control | absent | present in the runner |
+| AutoGluon | absent | full grid on all three datasets; the sharpest predictor on the electron-beam data and the worst calibrated |
 | figure names | `fig01`--`fig12`, `figB1`, `figB2` | `fig05`--`fig12` (article), `figS1`--`figS5` (supplement) |
 
 ## Layout
@@ -56,7 +56,7 @@ python runner/make_figures.py --in runs/final --out outputs/figures
 ```
 
 The values in `results/stats/` are the frozen ones the article reports. `omnibus.json`
-must show `n_blocks` 15 and a `block_definition` of "fold for cv=logo (seeds averaged
+must show `n_blocks` 35 and a `block_definition` of "fold for cv=logo (seeds averaged
 within fold)": blocking on (fold x seed) treats deterministic seed copies as independent
 observations and inflates the test.
 

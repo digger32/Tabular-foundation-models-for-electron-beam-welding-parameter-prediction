@@ -2,10 +2,20 @@
   "nominal": 0.8,
   "target": "Depth",
   "by_model": {
+    "autogluon": {
+      "cvplus": 0.819,
+      "split": 0.635,
+      "nexcp": 0.806
+    },
     "ngb": {
       "cvplus": 0.819,
       "split": 0.692,
       "nexcp": 0.778
+    },
+    "tabiclv2": {
+      "cvplus": 0.833,
+      "split": 0.654,
+      "nexcp": 0.792
     },
     "tabpfn_v25": {
       "cvplus": 0.806,
@@ -25,16 +35,22 @@
   },
   "tfm_mean": {
     "cvplus": {
-      "coverage": 0.815,
-      "gap_from_nominal": 0.015
+      "coverage": 0.819,
+      "gap_from_nominal": 0.019
     },
     "split": {
-      "coverage": 0.737,
-      "gap_from_nominal": 0.063
+      "coverage": 0.716,
+      "gap_from_nominal": 0.084
     },
     "nexcp": {
-      "coverage": 0.783,
-      "gap_from_nominal": 0.017
+      "coverage": 0.785,
+      "gap_from_nominal": 0.015
     }
-  }
+  },
+  "tfm_models": [
+    "tabpfn_v2",
+    "tabpfn_v25",
+    "tabpfn_v3",
+    "tabiclv2"
+  ]
 }

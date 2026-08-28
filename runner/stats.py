@@ -266,8 +266,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--in", dest="indir", required=True)
     ap.add_argument("--out", dest="outdir", required=True)
+    ap.add_argument("--omnibus-exclude", dest="omnibus_exclude", default="autogluon",
+                    help="comma-separated models kept out of the Friedman omnibus and out "
+                         "of block building; negative controls belong here, not in the test")
     a = ap.parse_args()
     indir, outdir = Path(a.indir), Path(a.outdir)
+    omnibus_exclude = {m.strip() for m in (a.omnibus_exclude or "").split(",") if m.strip()}
     (outdir / "stats").mkdir(parents=True, exist_ok=True)
 
     raw = load_raw_units(indir)
@@ -297,7 +301,12 @@ def main():
     (outdir / "stats" / "summary.json").write_text(json.dumps(summary, indent=2))
 
     # ---- blocks: the replicate is the fold under LOGO, the seed under holdout ---
-    blocks, block_provenance = make_blocks(raw, models)
+    # A negative control must not sit in the omnibus: it is reported to show that a route
+    # fails, not to be ranked against predictors. It is excluded from BLOCK BUILDING too,
+    # because make_blocks keeps only blocks in which every model has a value, so a model
+    # present on one dataset silently deletes the blocks of every other dataset.
+    omni_models = [m for m in models if m not in omnibus_exclude]
+    blocks, block_provenance = make_blocks(raw, omni_models)
     (outdir / "stats" / "seed_determinism.json").write_text(
         json.dumps(seed_determinism(raw, models), indent=2))
 
@@ -305,15 +314,16 @@ def main():
     omnibus = {"test": "Friedman across models on macro-RMSE (regime=full)",
                "block_definition": "fold for cv=logo (seeds averaged within fold); "
                                    "seed for cv=holdout (each seed is a fresh split)",
-               "n_blocks": len(blocks), "blocks": block_provenance, "models": models}
-    posthoc = {"test": "Nemenyi post-hoc + mean ranks", "models": models}
-    if len(blocks) >= 6 and len(models) >= 3:
-        mat = np.array([[b[m] for m in models] for b in blocks])   # (blocks, models)
+               "n_blocks": len(blocks), "blocks": block_provenance, "models": omni_models,
+               "excluded_from_omnibus": sorted(omnibus_exclude)}
+    posthoc = {"test": "Nemenyi post-hoc + mean ranks", "models": omni_models}
+    if len(blocks) >= 6 and len(omni_models) >= 3:
+        mat = np.array([[b[m] for m in omni_models] for b in blocks])   # (blocks, models)
         fr, p = friedmanchisquare(*[mat[:, j] for j in range(mat.shape[1])])
         omnibus["friedman_stat"] = float(fr); omnibus["p_value"] = float(p)
         ranks = np.argsort(np.argsort(mat, axis=1), axis=1) + 1     # 1=best (lowest RMSE)
-        posthoc["mean_rank"] = {m: float(ranks[:, j].mean()) for j, m in enumerate(models)}
-        k, N = len(models), len(blocks)
+        posthoc["mean_rank"] = {m: float(ranks[:, j].mean()) for j, m in enumerate(omni_models)}
+        k, N = len(omni_models), len(blocks)
         q_alpha = 3.314  # Nemenyi q for alpha=0.05, k up to ~10 (interp.); refine per k
         posthoc["critical_difference"] = float(q_alpha * np.sqrt(k * (k + 1) / (6.0 * N)))
         if sp is not None:
@@ -322,14 +332,15 @@ def main():
     (outdir / "stats" / "posthoc.json").write_text(json.dumps(posthoc, indent=2))
 
     # ---- pairwise Wilcoxon-Holm: each TFM vs the best classical control --------
-    means = {m: np.mean([b[m] for b in blocks]) for m in models} if blocks else {}
-    best_classical = min((m for m in models if m in CLASSICAL),
+    # blocks carry only omni_models, so the pairwise tests must use the same set
+    means = {m: np.mean([b[m] for b in blocks]) for m in omni_models} if blocks else {}
+    best_classical = min((m for m in omni_models if m in CLASSICAL),
                          key=lambda m: means.get(m, np.inf), default=None)
     pairwise = {"reference_best_classical": best_classical}
     if best_classical and blocks:
         ref = np.array([b[best_classical] for b in blocks])
         pairs = {}
-        for m in models:
+        for m in omni_models:
             if m in TFM:
                 pairs[f"{m}_vs_{best_classical}"] = (np.array([b[m] for b in blocks]), ref)
         pairwise["tests"] = wilcoxon_holm(pairs)

@@ -33,7 +33,7 @@ plt.rcParams.update({"font.size": 9, "axes.spines.top": False,
                      "axes.spines.right": False, "figure.dpi": 120})
 
 DISPLAY = {"tabpfn_v2": "TabPFN v2", "tabpfn_v25": "TabPFN v2.5", "tabpfn_v3": "TabPFN v3",
-           "tabiclv2": "TabICLv2", "mitra": "Mitra", "catboost": "CatBoost", "xgb": "XGBoost",
+           "tabiclv2": "TabICLv2", "mitra": "Mitra", "autogluon": "AutoGluon", "catboost": "CatBoost", "xgb": "XGBoost",
            "ngb": "NGBoost", "mlp": "MLP"}
 def disp(m):
     return DISPLAY.get(m, m)
@@ -388,17 +388,22 @@ def fig_decision_oc(indir, out):
             dr = [r["models"][m].get("decision_rate", np.nan) for r in arows]
             fa = [r["models"][m].get("false_accept_rate", 0.0) for r in arows]
             ax.bar(x + j * w - 0.4 + w / 2, dr, w, color=COLOR.get(m, "#777"), label=disp(m))
+            # Label every bar, including the zeros: an absent label was being read as
+            # "not computed" rather than "no false accept". 1.4% is one cross-section
+            # of the 72, which is why several models carry the same figure.
             for xi, (d, f) in enumerate(zip(dr, fa)):
-                if f and f > 0:
-                    ax.text(x[xi] + j * w - 0.4 + w / 2, d, f"FA{f*100:.1f}",
-                            ha="center", va="bottom", fontsize=5, rotation=90)
+                f = f or 0.0
+                ax.text(x[xi] + j * w - 0.4 + w / 2, d, f"FA {f*100:.1f}",
+                        ha="center", va="bottom", fontsize=4.5, rotation=90)
         ax.set_xticks(x); ax.set_xticklabels([f"alpha={a}" for a in alphas])
         ax.set_ylabel("decision rate"); ax.set_ylim(0, 1)
         ax.set_title("(b) decision rate vs risk"); ax.legend(fontsize=6, ncol=2)
     # tight_layout first, then place the suptitle clear of the panel titles: without
     # this the figure title lands on top of the "(a)"/"(b)" headings.
-    fig.tight_layout()
-    fig.suptitle("Operating characteristic (production tier, nexCP)", y=1.06)
+    # tight_layout must be told to leave the top strip free, otherwise it lays the
+    # panels out over the whole canvas and the suptitle lands on the panel titles.
+    fig.tight_layout(rect=[0, 0, 1, 0.90])
+    fig.suptitle("Operating characteristic (production tier, nexCP)", y=0.985)
     save(fig, out, "fig10_decision_oc")
 
 
